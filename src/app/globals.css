@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f2ed;
+  --foreground: #171a1f;
+  --ink-muted: #62666f;
+  --panel: #fffdf8;
+  --line: #dedbd2;
+  --accent: #ff5a36;
+  --accent-dark: #c9361c;
+  --navy: #15263d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #ffd4c7;
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__node {
+  border-radius: 18px;
+}
+
+.react-flow__resize-control.handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  background: var(--accent);
+}
+
+.react-flow__resize-control.line {
+  border-color: var(--accent);
+}
