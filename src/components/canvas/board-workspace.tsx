@@ -16,6 +16,10 @@ import { BoardNodeActionsContext, type BoardNodeActions } from "./board-node-act
 import { CreationToolbar } from "./creation-toolbar";
 import { PropertiesPanel } from "./properties-panel";
 import { SaveIndicator } from "./save-indicator";
+import {
+  GitHubPrImportDialog,
+  type GitHubImportResult,
+} from "@/components/github/github-pr-import-dialog";
 import { ReviewPanel } from "@/components/review/review-panel";
 import { ReviewStatusActions } from "@/components/review/review-status-actions";
 import { Brand } from "@/components/ui/brand";
@@ -28,10 +32,11 @@ import {
   listAnnotations,
   updateAnnotation,
 } from "@/lib/data/annotations";
-import { getBoard, updateBoardStatus } from "@/lib/data/boards";
+import { getBoard, updateBoardGitHubSource, updateBoardStatus } from "@/lib/data/boards";
 import { uploadBoardImage } from "@/lib/data/media";
 import {
   createBoardNode,
+  createBoardNodes,
   deleteBoardNode,
   listBoardNodes,
   updateBoardNode,
@@ -43,7 +48,9 @@ import {
   updateCommentThreadStatus,
 } from "@/lib/data/review";
 import { useGuestIdentity } from "@/lib/guest/use-guest-identity";
-import type { BoardFlowNode } from "@/lib/nodes/serialization";
+import { buildImportedCodeNodeRecords } from "@/lib/github/import";
+import type { GitHubChangedFile, GitHubPullRequest } from "@/lib/github/schema";
+import { serializeBoardNode, type BoardFlowNode } from "@/lib/nodes/serialization";
 import { AnnotationSaveCoordinator } from "@/lib/persistence/annotation-save-coordinator";
 import { BoardSaveCoordinator } from "@/lib/persistence/board-save-coordinator";
 import { CombinedSaveState } from "@/lib/persistence/combined-save-state";
@@ -169,6 +176,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
+  const [githubImportOpen, setGitHubImportOpen] = useState(false);
   const nodes = useBoardStore((state) => state.nodes);
   const annotations = useAnnotationStore((state) => state.annotations);
   const threads = useReviewStore((state) => state.threads);
@@ -224,6 +232,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         : nodes,
     [annotationMode, nodes],
   );
+  const serializedNodes = useMemo(() => nodes.map(serializeBoardNode), [nodes]);
 
   const queueNodeSave = useCallback(
     (nodeId: string) => {
@@ -622,6 +631,53 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [board, reviewStatusUpdating, saveCoordinator],
   );
 
+  const handleGitHubImport = useCallback(
+    async (
+      pullRequest: GitHubPullRequest,
+      selectedFiles: GitHubChangedFile[],
+    ): Promise<GitHubImportResult> => {
+      if (!identity) return { importedCount: 0, skippedCount: 0 };
+      const existingRecords = useBoardStore.getState().nodes.map(serializeBoardNode);
+      const importedAt = new Date().toISOString();
+      const { records, skippedFiles } = buildImportedCodeNodeRecords({
+        boardId,
+        guestId: identity.id,
+        pullRequest,
+        selectedFiles,
+        existingNodes: existingRecords,
+        importedAt,
+      });
+      const [owner, repository] = pullRequest.repositoryFullName.split("/");
+      if (!owner || !repository) throw new Error("GitHub returned an invalid repository name.");
+
+      saveCoordinator.beginImmediate();
+      try {
+        const savedRecords = await createBoardNodes(records);
+        for (const record of savedRecords) useBoardStore.getState().addRecord(record);
+        const savedBoard = await updateBoardGitHubSource(boardId, {
+          owner,
+          repository,
+          pullRequestNumber: pullRequest.pullNumber,
+          pullRequestUrl: pullRequest.htmlUrl,
+          headCommitSha: pullRequest.headCommitSha,
+          lastImportedAt: importedAt,
+        });
+        setBoard(savedBoard);
+        if (savedRecords.at(-1)) {
+          useCanvasUiStore.getState().selectNode(savedRecords.at(-1)?.id ?? null);
+        }
+        saveCoordinator.finishImmediate();
+        return { importedCount: savedRecords.length, skippedCount: skippedFiles.length };
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Could not import GitHub files.";
+        saveCoordinator.failImmediate(message);
+        throw caughtError;
+      }
+    },
+    [boardId, identity, saveCoordinator],
+  );
+
   const actions: BoardNodeActions = { updateNode, commitResize, uploadImage };
 
   if (!configured) {
@@ -721,6 +777,10 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
           <CreationToolbar
             onAddCode={() => void addNode("code")}
             onAddImage={() => void addNode("image")}
+            onImportGitHub={() => {
+              if (annotationMode) useCanvasUiStore.getState().exitAnnotationMode();
+              setGitHubImportOpen(true);
+            }}
             annotationMode={annotationMode}
             onToggleAnnotations={() => {
               const ui = useCanvasUiStore.getState();
@@ -830,6 +890,15 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             <PropertiesPanel onDelete={deleteNode} />
           )}
         </div>
+        {githubImportOpen && (
+          <GitHubPrImportDialog
+            boardId={boardId}
+            existingNodes={serializedNodes}
+            initialUrl={board.github_pull_request_url}
+            onClose={() => setGitHubImportOpen(false)}
+            onImport={handleGitHubImport}
+          />
+        )}
       </main>
     </BoardNodeActionsContext.Provider>
   );

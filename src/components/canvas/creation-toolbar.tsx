@@ -2,6 +2,7 @@ type CreationToolbarProps = {
   onAddCode: () => void;
   onAddImage: () => void;
   onToggleAnnotations: () => void;
+  onImportGitHub: () => void;
   annotationMode: boolean;
   disabled?: boolean;
 };
@@ -10,6 +11,7 @@ export function CreationToolbar({
   onAddCode,
   onAddImage,
   onToggleAnnotations,
+  onImportGitHub,
   annotationMode,
   disabled,
 }: CreationToolbarProps) {
@@ -18,6 +20,16 @@ export function CreationToolbar({
       <span className="mb-1 text-[10px] font-black uppercase tracking-widest text-[#96989c]">
         Create
       </span>
+      <button
+        type="button"
+        data-testid="import-github-pr"
+        onClick={onImportGitHub}
+        disabled={disabled}
+        className="group grid w-full place-items-center gap-1 rounded-xl border border-[#dedbd2] bg-white px-2 py-3 text-[#253348] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ff5a36] disabled:opacity-50"
+      >
+        <span className="font-mono text-sm font-black text-[#15263d]">PR</span>
+        <span className="text-[10px] font-bold">GitHub</span>
+      </button>
       <button
         type="button"
         data-testid="add-code-node"

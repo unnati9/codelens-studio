@@ -22,7 +22,6 @@ The project is not complete until the exact nine-step demo succeeds twice consec
 
 * Do not implement optional features before the primary acceptance gate passes.
 * Do not add video before the main demo path is stable.
-* Do not add GitHub integration.
 * Do not add AI review features.
 * Do not add microservices.
 * Do not add complex authentication.
