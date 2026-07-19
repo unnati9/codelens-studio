@@ -10,9 +10,10 @@
    in the `supabase_realtime` publication. The realtime migration performs this automatically.
 5. Confirm that the public `board-media` bucket appears in Storage with an 8 MB limit and PNG,
    JPEG, and WebP MIME restrictions.
-6. Copy the project URL and anon key from Project Settings > API.
+6. Copy the project URL, anon key, and service-role key from Project Settings > API.
 
-Do not copy or expose the service-role key. The application does not use it.
+The capture job APIs and worker use the service-role key only on trusted server runtimes. Never put
+it in browser code, client logs, or a variable with a `NEXT_PUBLIC_` prefix.
 
 ## Vercel or another Next.js host
 
@@ -22,6 +23,7 @@ Do not copy or expose the service-role key. The application does not use it.
 
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; required for capture configuration and job APIs)
    - `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=board-media` (optional because this is the default)
    - `GITHUB_TOKEN` (optional, server-only, raises public GitHub API rate limits)
    - `APP_URL` (the exact deployed origin, without a trailing slash)
@@ -46,9 +48,10 @@ Do not copy or expose the service-role key. The application does not use it.
 5. Open `/api/health`. A successful deployment returns HTTP 200 with both `database` and `storage`
    set to `true`.
 
-The application uses standard Next.js output and has no filesystem persistence, background worker,
-microservice, or platform-specific runtime dependency. It can run on any host supporting Next.js 16
-and Node.js 20.9 or newer. If configured, `GITHUB_TOKEN` must remain server-only.
+The web application uses standard Next.js output and no filesystem persistence. Automatic capture
+adds one separately deployed Node worker with a Playwright Chromium runtime; it shares Supabase with
+the web app and is not a public service. The web app can run on any host supporting Next.js 16 and
+Node.js 20.9 or newer. All server tokens must remain server-only.
 
 Realtime collaboration needs no additional environment variable. It uses the existing public
 Supabase URL and publishable/anon key under the same prototype Row Level Security policies.
@@ -117,8 +120,60 @@ and record setup instructions for routes that require state or seeded data.
 
 The analyzer handles static TypeScript, JavaScript, JSX, and TSX dependency patterns for Next.js App
 Router, Next.js Pages Router, and common React Router declarations. It does not execute repository
-code, follow computed imports, interpret custom bundler alias plugins, infer routes with AI, capture
-screenshots, or create visual diffs.
+code, follow computed imports, interpret custom bundler alias plugins, infer routes with AI, or
+create visual diffs.
+
+## Playwright capture worker setup
+
+1. Apply `202607190006_playwright_capture_jobs.sql` after the affected-route migration. It creates
+   repository capture configuration, persistent jobs, the one-current-job uniqueness rule, and an
+   atomic service-role-only queue claim function.
+2. Add `SUPABASE_SERVICE_ROLE_KEY` to both the web server and worker as a server-only secret. Capture
+   configuration and job routes use it because those tables intentionally have no guest RLS
+   policies. Never add a `NEXT_PUBLIC_` prefix or print this key.
+3. Deploy a trusted Node worker from the same revision. Install dependencies and Chromium, then run:
+
+   ```text
+   npm ci
+   npx playwright install --with-deps chromium
+   npm run capture:worker
+   ```
+
+   `npm run capture:once` is available for a one-job scheduler. The continuous worker polls every two
+   seconds by default; tune `CAPTURE_POLL_INTERVAL_MS` and set a stable `CAPTURE_WORKER_NAME` for
+   observability. A container with at least 1 GB memory is recommended. The worker always closes each
+   browser context and browser, including failure and timeout paths. The atomic claim also marks a
+   Running job Failed when its worker lease has been abandoned for ten minutes, making it retryable.
+
+4. In **Affected UI > Deterministic capture settings**, save viewports and any readiness, locale,
+   timezone, color, masking, hiding, or timeout values. Add concrete dynamic-route examples in
+   repository fallbacks before selecting those routes.
+5. For authenticated pages, put Playwright storage-state JSON (or base64-encoded JSON) in a worker
+   secret such as `CODELENS_CAPTURE_STORAGE_STATE` and save only that variable name, or save
+   repository login steps. A fill step has the form
+   `{"action":"fill","selector":"input[type=email]","valueEnv":"CODELENS_CAPTURE_TEST_EMAIL"}`.
+   Goto, click, and waitFor steps are also supported. Put each referenced credential only in the
+   worker environment. Use a least-privilege test account with non-production data.
+
+The worker captures a base and PR full page plus base and PR viewport for each route/viewport job. It
+stores PNGs in the existing `board-media` bucket, creates four normal image nodes, and records final
+URLs, main-document HTTP statuses, console/page errors, failed network requests, viewport metadata,
+artifact sizes, and durations. Jobs become Stale if the board SHA or deployment URLs change before
+execution.
+
+Capture security is bounded: initial URLs, redirects, and every HTTP(S) subresource are DNS-checked
+against private, loopback, link-local, multicast, documentation, and other special-use IP ranges;
+URL credentials and non-HTTPS production targets are rejected. Each page is limited to 5 redirects,
+250 requests, 25 MB of network transfer, 20,000 CSS pixels per dimension, 40 million CSS pixels
+total, the configured timeout (hard-capped at 120 seconds per target), and the existing 8 MB
+per-object storage limit. Service workers and downloads are disabled. `CAPTURE_ALLOW_LOCALHOST=true`
+exists only for deterministic local fixture tests and must never be enabled in production.
+
+Current limitations: capture targets must be publicly reachable by the worker; protected deployment
+front doors need ordinary storage state or repository login setup; pages larger than the safety or
+storage caps fail instead of being tiled; masks are solid Playwright masks; login setup supports a
+small deterministic action set; only queued jobs can be cancelled; and there is no pixel diff,
+changed-region detection, source mapping, or GitHub Checks.
 
 ## Day 1 acceptance gate
 
@@ -171,8 +226,9 @@ service-role key or delete pre-existing user data.
   board and node policies allow anonymous reads. Public RLS must be replaced before private code can
   be stored safely.
 - GitHub synchronization and deployment refresh are manual entry points; only queued and building
-  deployment states poll while a board is open. This phase has no webhooks, screenshot capture,
-  route analysis, iframe preview, visual diff, GitHub Checks, or AI review.
+  deployment states poll while a board is open. Capture jobs require the separately deployed worker.
+  There are no webhooks, iframe previews, pixel diffs, changed-region detection, source mapping,
+  GitHub Checks, or AI review.
 - Preview discovery supports Vercel only. It cannot discover projects the configured token cannot
   read, and it does not bypass Vercel Deployment Protection.
 - Affected-route analysis uses bounded static import heuristics. Dynamic imports, runtime route

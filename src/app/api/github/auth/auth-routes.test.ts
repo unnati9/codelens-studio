@@ -189,12 +189,28 @@ describe("GitHub auth routes", () => {
   });
 
   it("clears both auth cookies on disconnect", async () => {
-    const response = await disconnect();
+    const response = await disconnect(
+      new Request("https://codelens.example/api/github/auth/disconnect", {
+        method: "POST",
+        headers: { origin: "https://codelens.example" },
+      }),
+    );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ disconnected: true });
     const cookies = setCookies(response).join("\n");
     expect(cookies).toContain(`${GITHUB_SESSION_COOKIE}=;`);
     expect(cookies).toContain(`${GITHUB_OAUTH_COOKIE}=;`);
     expect(cookies).toMatch(/HttpOnly/i);
+  });
+
+  it("rejects a cross-origin disconnect request without clearing cookies", async () => {
+    const response = await disconnect(
+      new Request("https://codelens.example/api/github/auth/disconnect", {
+        method: "POST",
+        headers: { origin: "https://attacker.example" },
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 });

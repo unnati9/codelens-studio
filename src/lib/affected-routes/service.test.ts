@@ -8,7 +8,7 @@ import { nextAppFixture, routeConfig } from "../../../tests/fixtures/affected-ro
 
 const mocks = vi.hoisted(() => ({
   getSupabaseServerClient: vi.fn(),
-  fetchPublicGitHubPullRequest: vi.fn(),
+  fetchGitHubPullRequest: vi.fn(),
   fetchGitHubRepositorySnapshot: vi.fn(),
 }));
 
@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/github/server", () => ({
-  fetchPublicGitHubPullRequest: mocks.fetchPublicGitHubPullRequest,
+  fetchGitHubPullRequest: mocks.fetchGitHubPullRequest,
 }));
 
 vi.mock("@/lib/affected-routes/github-source", () => ({
@@ -123,7 +123,7 @@ function mockSupabase(input: { config: RepositoryRouteConfig | null; cache: unkn
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.fetchPublicGitHubPullRequest.mockResolvedValue(pullRequest);
+  mocks.fetchGitHubPullRequest.mockResolvedValue(pullRequest);
   mocks.fetchGitHubRepositorySnapshot.mockResolvedValue(nextAppFixture);
 });
 
@@ -138,11 +138,11 @@ describe("affected route analysis service cache", () => {
       },
     });
 
-    const result = await analyzeBoardAffectedRoutes(board.id);
+    const result = await analyzeBoardAffectedRoutes(board.id, { accessToken: "test-access-token" });
 
     expect(result.cacheHit).toBe(true);
     expect(result.analysis.routes[0].routePath).toBe("/dashboard");
-    expect(mocks.fetchPublicGitHubPullRequest).not.toHaveBeenCalled();
+    expect(mocks.fetchGitHubPullRequest).not.toHaveBeenCalled();
     expect(mocks.fetchGitHubRepositorySnapshot).not.toHaveBeenCalled();
   });
 
@@ -157,10 +157,10 @@ describe("affected route analysis service cache", () => {
       },
     });
 
-    const result = await analyzeBoardAffectedRoutes(board.id);
+    const result = await analyzeBoardAffectedRoutes(board.id, { accessToken: "test-access-token" });
 
     expect(result.cacheHit).toBe(false);
-    expect(mocks.fetchPublicGitHubPullRequest).toHaveBeenCalledOnce();
+    expect(mocks.fetchGitHubPullRequest).toHaveBeenCalledOnce();
     expect(mocks.fetchGitHubRepositorySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         owner: "octocat",

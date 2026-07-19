@@ -171,7 +171,7 @@ test("Day 1 board content and layout survive a production refresh", async ({ pag
     const imageStart = await readGeometry(imageNode);
 
     await waitForDebouncedNodeSave(page, () => dragNodeBy(page, codeNode, -140, 250));
-    await waitForDebouncedNodeSave(page, () => dragNodeBy(page, imageNode, 500, -80));
+    await waitForDebouncedNodeSave(page, () => dragNodeBy(page, imageNode, 280, -80));
     await codeNode.getByTestId("node-drag-handle").click();
     await expectSaved(page);
     await waitForDebouncedNodeSave(page, () => resizeNodeBy(page, codeNode, 100, 70));

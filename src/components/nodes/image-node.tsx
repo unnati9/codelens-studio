@@ -18,6 +18,12 @@ export function ImageNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
   if (content.kind !== "image") return null;
 
   const imageUrl = content.storagePath ? getBoardImageUrl(content.storagePath) : null;
+  const sourceLabel =
+    content.source === "GENERATED_BASE_CAPTURE"
+      ? "Generated base capture"
+      : content.source === "GENERATED_PR_CAPTURE"
+        ? "Generated PR capture"
+        : "Manual upload";
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -73,7 +79,7 @@ export function ImageNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
           placeholder="UI screenshot"
         />
         <span className="text-[10px] font-bold uppercase tracking-widest text-[#a0a1a4]">
-          Image
+          {sourceLabel}
         </span>
       </div>
 
@@ -112,7 +118,7 @@ export function ImageNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
 
       <div className="nodrag flex min-h-11 items-center justify-between gap-3 border-t border-[#e6e1d7] bg-white px-4 py-2">
         <span className="min-w-0 truncate text-[11px] text-[#777a80]">
-          {uploadError || content.fileName || "No image selected"}
+          {uploadError || content.fileName || sourceLabel}
         </span>
         <button
           type="button"

@@ -11,14 +11,19 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "capture:worker": "tsx scripts/capture-worker.ts",
+    "capture:once": "tsx scripts/capture-worker.ts --once",
+    "capture:install": "playwright install chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",
     "@xyflow/react": "^12.11.2",
     "next": "^16.2.10",
+    "playwright": "^1.61.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tsx": "^4.20.6",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },

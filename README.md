@@ -152,8 +152,8 @@ Root layouts, `_app`, global CSS, themes, providers, shared headers, and shared 
 broad-impact changes. The panel shows confidence, direct/indirect/broad impact, related files, a
 representative import chain, dynamic-route warnings, setup requirements, and capture priority. It
 also supports manual routes, ignored routes, dynamic examples, route-to-source mappings, and setup
-instructions. This phase does not capture screenshots, instrument source code, generate routes with
-AI, or calculate visual differences.
+instructions. Capture-ready routes can then be queued for Playwright base/PR screenshots; the
+system does not instrument source code, generate routes with AI, or calculate visual differences.
 
 Default safety limits are an import depth of 8, 300 source files, 200,000 bytes per file, and 8
 seconds. Configure `AFFECTED_ROUTE_MAX_DEPTH`, `AFFECTED_ROUTE_MAX_FILES`,
@@ -166,6 +166,25 @@ custom Babel/Webpack/Vite alias plugins, non-static React Router nesting, deeply
 roots, and dependencies available only in a removed file at the head commit. Use repository fallback
 mappings for those cases. Analysis is intentionally conservative and may require a manual route when
 a framework pattern is ambiguous.
+
+## Automatic Playwright capture
+
+Open **Affected UI**, select capture-ready routes and one or more repository viewports, then queue
+captures. Dynamic routes use the configured concrete example. Each persistent job captures the base
+and PR deployment with identical settings and creates four existing ImageNodes: base full page, base
+viewport, PR full page, and PR viewport. Generated nodes use the existing storage, realtime,
+annotation, and comment flows. User uploads remain labeled **Manual upload**.
+
+Repository settings include animation disabling, reduced motion, font readiness, a ready selector,
+post-ready delay, locale, timezone, color scheme, mask/hide selectors, timeout, multiple viewports,
+Playwright storage state, and login steps. Storage state and login fills reference worker
+environment-variable names; secret values are never saved or returned to the browser. Jobs are
+Queued, Running, Completed, Failed, Cancelled, or Stale. Duplicate current jobs for the same route,
+head SHA, resolved dynamic example, viewport, and scenario are reused; failed jobs can be retried and
+terminal jobs can be explicitly re-run.
+
+Run the browser worker separately with `npm run capture:worker`. See [DEPLOYMENT.md](./DEPLOYMENT.md)
+for migration, worker, authentication, and security configuration.
 
 ## Realtime collaboration
 
@@ -192,6 +211,9 @@ npm run lint          Run ESLint
 npm run typecheck     Run strict TypeScript checking
 npm test              Run unit tests
 npm run test:e2e      Run the Day 1 Playwright acceptance test
+npm run capture:install Install the worker's Chromium binary
+npm run capture:once  Process at most one queued capture job
+npm run capture:worker Continuously process queued capture jobs
 npm run build         Create a production build
 npm start             Run the production build
 ```

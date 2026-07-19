@@ -49,6 +49,7 @@ describe("bounded GitHub source loading", () => {
       repository: "affected-routes",
       headSha,
       changedFiles: ["src/components/Changed.tsx"],
+      accessToken: "test-access-token",
       limits: {
         maxDepth: 8,
         maxFiles: 2,

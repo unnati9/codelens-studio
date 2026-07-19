@@ -33,6 +33,7 @@ export async function uploadBoardImage(boardId: string, file: File): Promise<Ima
     sizeBytes: file.size,
     naturalWidth: dimensions.width,
     naturalHeight: dimensions.height,
+    source: "MANUAL_UPLOAD",
   };
 }
 

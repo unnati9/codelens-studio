@@ -319,13 +319,20 @@ export function GitHubRepositoryDrawer({
 
   const disconnect = async () => {
     setBusyLabel("Disconnecting GitHub");
+    setError(null);
+    setNotice(null);
     try {
-      await fetch("/api/github/auth/disconnect", { method: "POST" });
+      const response = await fetch("/api/github/auth/disconnect", { method: "POST" });
+      if (!response.ok) throw await responseError(response, "Could not disconnect GitHub.");
       setConnected(false);
       setGitHubUser(null);
       setRepositories([]);
       setPullRequest(null);
+      setSelectedRepositoryKey("");
+      setSelectedPullNumber("");
       setNotice("GitHub was disconnected from this browser.");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not disconnect GitHub.");
     } finally {
       setBusyLabel(null);
     }
@@ -333,7 +340,7 @@ export function GitHubRepositoryDrawer({
 
   const selectedCount = selectedFiles.size;
   const overLimit = Boolean(pullRequest && selectedCount > pullRequest.importLimit);
-  const returnTo = `/boards/${board.id}?github=connected`;
+  const returnTo = `/boards/${board.id}?drawer=github`;
 
   return (
     <div

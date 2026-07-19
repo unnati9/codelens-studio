@@ -121,6 +121,19 @@ export const imageNodeContentSchema = z.object({
   sizeBytes: z.number().int().nonnegative().nullable(),
   naturalWidth: z.number().positive().nullable(),
   naturalHeight: z.number().positive().nullable(),
+  source: z.enum(["MANUAL_UPLOAD", "GENERATED_BASE_CAPTURE", "GENERATED_PR_CAPTURE"]).optional(),
+  capture: z
+    .object({
+      jobId: z.string().uuid(),
+      routePath: z.string().min(1).max(2048),
+      resolvedPath: z.string().min(1).max(2048),
+      variant: z.enum(["FULL_PAGE", "VIEWPORT"]),
+      finalUrl: z.url(),
+      httpStatus: z.number().int().min(100).max(599).nullable(),
+      viewportName: z.string().min(1).max(80),
+      capturedAt: z.string().datetime({ offset: true }),
+    })
+    .optional(),
 });
 
 export const boardNodeContentSchema = z.discriminatedUnion("kind", [

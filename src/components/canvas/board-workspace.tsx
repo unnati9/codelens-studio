@@ -123,6 +123,7 @@ function makeNodeRecord(
           sizeBytes: null,
           naturalWidth: null,
           naturalHeight: null,
+          source: "MANUAL_UPLOAD",
         };
 
   return {
@@ -188,7 +189,13 @@ function offsetForDuplicate(annotation: Annotation): AnnotationGeometry {
   return { x: x + dx, y: y + dy, width, height };
 }
 
-export function BoardWorkspace({ boardId }: { boardId: string }) {
+export function BoardWorkspace({
+  boardId,
+  initialGitHubDrawerOpen = false,
+}: {
+  boardId: string;
+  initialGitHubDrawerOpen?: boolean;
+}) {
   const { identity } = useGuestIdentity();
   const sessionId = useBrowserSessionId();
   const [board, setBoard] = useState<Board | null>(null);
@@ -197,9 +204,10 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
   const [githubImportOpen, setGitHubImportOpen] = useState(false);
-  const [githubDrawerOpen, setGitHubDrawerOpen] = useState(false);
+  const [githubDrawerOpen, setGitHubDrawerOpen] = useState(initialGitHubDrawerOpen);
   const [previewDeploymentPanelOpen, setPreviewDeploymentPanelOpen] = useState(false);
   const [affectedUiPanelOpen, setAffectedUiPanelOpen] = useState(false);
+
   const previewPollingAttempt = useRef(0);
   const [previewPollingError, setPreviewPollingError] = useState<string | null>(null);
   const localNodeInteractions = useRef(new Set<string>());

@@ -8,6 +8,7 @@ import type {
   RepositoryRouteConfigInput,
 } from "@/lib/affected-routes/schema";
 import type { Board } from "@/lib/validation/board";
+import { CapturePanel } from "@/components/capture/capture-panel";
 
 type AffectedUiPanelProps = {
   board: Board;
@@ -358,6 +359,15 @@ export function AffectedUiPanel({ board, createdBy, onClose }: AffectedUiPanelPr
               </p>
             )}
           </section>
+
+          {result && (
+            <CapturePanel
+              key={result.analysis.analyzedAt}
+              board={board}
+              routes={activeRoutes}
+              createdBy={createdBy}
+            />
+          )}
 
           {ignoredRoutes.length > 0 && (
             <details className="rounded-xl border border-[#ded9cf] bg-[#f4f1eb] p-4">
