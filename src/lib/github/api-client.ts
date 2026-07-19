@@ -7,6 +7,7 @@ export interface GitHubJsonOptions {
   accessToken?: string;
   notFoundCode?: string;
   notFoundMessage?: string;
+  timeoutMs?: number;
 }
 
 function requestHeaders(accessToken?: string): HeadersInit {
@@ -48,7 +49,7 @@ export async function githubJson(url: string, options: GitHubJsonOptions = {}): 
     response = await fetch(url, {
       headers: requestHeaders(options.accessToken),
       cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(Math.max(250, Math.min(options.timeoutMs ?? 15_000, 15_000))),
     });
   } catch (error) {
     throw new GitHubImportError(
