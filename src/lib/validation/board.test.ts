@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardNodeSchema } from "./board";
+import { boardNodeSchema, boardStatusSchema } from "./board";
 
 const baseNode = {
   id: "a9c28c6e-34e3-49d1-b6ea-258b2487f414",
@@ -47,5 +47,11 @@ describe("boardNodeSchema", () => {
 
   it("rejects dimensions below the canvas minimum", () => {
     expect(boardNodeSchema.safeParse({ ...baseNode, width: 120 }).success).toBe(false);
+  });
+});
+
+describe("boardStatusSchema", () => {
+  it("accepts a changes-requested review state", () => {
+    expect(boardStatusSchema.parse("CHANGES_REQUESTED")).toBe("CHANGES_REQUESTED");
   });
 });

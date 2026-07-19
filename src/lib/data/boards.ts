@@ -1,5 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { boardSchema, type Board } from "@/lib/validation/board";
+import { boardSchema, type Board, type BoardStatus } from "@/lib/validation/board";
 
 export async function listBoards(): Promise<Board[]> {
   const { data, error } = await getSupabaseBrowserClient()
@@ -52,6 +52,21 @@ export async function createBoard(input: {
 
   if (error) {
     throw new Error(`Could not create board: ${error.message}`);
+  }
+
+  return boardSchema.parse(data);
+}
+
+export async function updateBoardStatus(boardId: string, status: BoardStatus): Promise<Board> {
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("boards")
+    .update({ status })
+    .eq("id", boardId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Could not update review status: ${error.message}`);
   }
 
   return boardSchema.parse(data);

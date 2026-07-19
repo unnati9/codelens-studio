@@ -4,6 +4,7 @@ import type {
   AnnotationTargetType,
   AnnotationTool,
 } from "@/lib/validation/annotation";
+import type { ThreadStatus } from "@/lib/validation/review";
 
 export type SaveState = "idle" | "saving" | "saved" | "failed";
 export type AnnotationInteractionTool = "SELECT" | AnnotationTool;
@@ -24,6 +25,8 @@ type CanvasUiStore = {
   annotationStyle: AnnotationStyle;
   annotationOverlayOpacity: number;
   annotationsVisible: boolean;
+  reviewPanelOpen: boolean;
+  threadFilter: ThreadStatus;
   saveState: SaveState;
   saveError: string | null;
   selectNode: (nodeId: string | null) => void;
@@ -35,6 +38,10 @@ type CanvasUiStore = {
   setAnnotationStyle: (style: AnnotationStyle) => void;
   setAnnotationOverlayOpacity: (opacity: number) => void;
   toggleAnnotationsVisible: () => void;
+  setAnnotationsVisible: (visible: boolean) => void;
+  openReviewPanel: (annotationId?: string | null) => void;
+  closeReviewPanel: () => void;
+  setThreadFilter: (filter: ThreadStatus) => void;
   setSaveState: (saveState: SaveState, saveError?: string | null) => void;
   reset: () => void;
 };
@@ -49,6 +56,8 @@ export const useCanvasUiStore = create<CanvasUiStore>((set) => ({
   annotationStyle: defaultAnnotationStyle,
   annotationOverlayOpacity: 0.12,
   annotationsVisible: true,
+  reviewPanelOpen: false,
+  threadFilter: "OPEN",
   saveState: "idle",
   saveError: null,
   selectNode: (selectedNodeId) => set({ selectedNodeId }),
@@ -76,6 +85,11 @@ export const useCanvasUiStore = create<CanvasUiStore>((set) => ({
   setAnnotationOverlayOpacity: (annotationOverlayOpacity) => set({ annotationOverlayOpacity }),
   toggleAnnotationsVisible: () =>
     set((state) => ({ annotationsVisible: !state.annotationsVisible })),
+  setAnnotationsVisible: (annotationsVisible) => set({ annotationsVisible }),
+  openReviewPanel: (selectedAnnotationId = null) =>
+    set({ reviewPanelOpen: true, selectedAnnotationId }),
+  closeReviewPanel: () => set({ reviewPanelOpen: false }),
+  setThreadFilter: (threadFilter) => set({ threadFilter }),
   setSaveState: (saveState, saveError = null) => set({ saveState, saveError }),
   reset: () =>
     set({
@@ -88,6 +102,8 @@ export const useCanvasUiStore = create<CanvasUiStore>((set) => ({
       annotationStyle: defaultAnnotationStyle,
       annotationOverlayOpacity: 0.12,
       annotationsVisible: true,
+      reviewPanelOpen: false,
+      threadFilter: "OPEN",
       saveState: "idle",
       saveError: null,
     }),

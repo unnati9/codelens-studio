@@ -16,6 +16,8 @@ import { BoardNodeActionsContext, type BoardNodeActions } from "./board-node-act
 import { CreationToolbar } from "./creation-toolbar";
 import { PropertiesPanel } from "./properties-panel";
 import { SaveIndicator } from "./save-indicator";
+import { ReviewPanel } from "@/components/review/review-panel";
+import { ReviewStatusActions } from "@/components/review/review-status-actions";
 import { Brand } from "@/components/ui/brand";
 import { ConfigNotice } from "@/components/ui/config-notice";
 import { CodeNode } from "@/components/nodes/code-node";
@@ -26,7 +28,7 @@ import {
   listAnnotations,
   updateAnnotation,
 } from "@/lib/data/annotations";
-import { getBoard } from "@/lib/data/boards";
+import { getBoard, updateBoardStatus } from "@/lib/data/boards";
 import { uploadBoardImage } from "@/lib/data/media";
 import {
   createBoardNode,
@@ -34,11 +36,24 @@ import {
   listBoardNodes,
   updateBoardNode,
 } from "@/lib/data/nodes";
+import {
+  createCommentThread,
+  createReviewComment,
+  listReviewThreads,
+  updateCommentThreadStatus,
+} from "@/lib/data/review";
 import { useGuestIdentity } from "@/lib/guest/use-guest-identity";
 import type { BoardFlowNode } from "@/lib/nodes/serialization";
 import { AnnotationSaveCoordinator } from "@/lib/persistence/annotation-save-coordinator";
 import { BoardSaveCoordinator } from "@/lib/persistence/board-save-coordinator";
 import { CombinedSaveState } from "@/lib/persistence/combined-save-state";
+import {
+  createCommentDraft,
+  createCommentThreadDraft,
+  getThreadCounts,
+  groupCommentsByThread,
+} from "@/lib/review/threads";
+import { transitionBoardStatus, type ReviewAction } from "@/lib/review/status";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   annotationSchema,
@@ -47,9 +62,11 @@ import {
   type AnnotationStyle,
 } from "@/lib/validation/annotation";
 import type { Board, BoardNodeContent, BoardNodeRecord } from "@/lib/validation/board";
+import { reviewThreadSchema, type ReviewThread, type ThreadStatus } from "@/lib/validation/review";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useBoardStore } from "@/stores/board-store";
 import { useCanvasUiStore } from "@/stores/canvas-ui-store";
+import { useReviewStore } from "@/stores/review-store";
 
 const nodeTypes = {
   code: CodeNode,
@@ -151,8 +168,10 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
   const nodes = useBoardStore((state) => state.nodes);
   const annotations = useAnnotationStore((state) => state.annotations);
+  const threads = useReviewStore((state) => state.threads);
   const applyChanges = useBoardStore((state) => state.applyChanges);
   const setNodes = useBoardStore((state) => state.setNodes);
   const configured = isSupabaseConfigured();
@@ -184,6 +203,18 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const annotationOverlayOpacity = useCanvasUiStore((state) => state.annotationOverlayOpacity);
   const annotationsVisible = useCanvasUiStore((state) => state.annotationsVisible);
   const selectedAnnotationId = useCanvasUiStore((state) => state.selectedAnnotationId);
+  const reviewPanelOpen = useCanvasUiStore((state) => state.reviewPanelOpen);
+  const threadFilter = useCanvasUiStore((state) => state.threadFilter);
+  const threadCounts = useMemo(() => getThreadCounts(threads), [threads]);
+  const resolvedAnnotationIds = useMemo(
+    () =>
+      new Set(
+        threads
+          .filter((thread) => thread.status === "RESOLVED")
+          .map((thread) => thread.annotationId),
+      ),
+    [threads],
+  );
   const selectedAnnotation =
     annotations.find((annotation) => annotation.id === selectedAnnotationId) ?? null;
   const interactiveNodes = useMemo(
@@ -213,15 +244,17 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
       useCanvasUiStore.getState().reset();
 
       try {
-        const [loadedBoard, loadedNodes, loadedAnnotations] = await Promise.all([
+        const [loadedBoard, loadedNodes, loadedAnnotations, loadedThreads] = await Promise.all([
           getBoard(boardId),
           listBoardNodes(boardId),
           listAnnotations(boardId),
+          listReviewThreads(boardId),
         ]);
         if (cancelled) return;
         setBoard(loadedBoard);
         useBoardStore.getState().initialize(boardId, loadedNodes);
         useAnnotationStore.getState().initialize(boardId, loadedAnnotations);
+        useReviewStore.getState().initialize(boardId, loadedThreads);
         combinedSaveState.markAllSaved();
       } catch (caughtError) {
         if (cancelled) return;
@@ -348,9 +381,14 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
       await saveCoordinator.flush(nodeId);
       saveCoordinator.beginImmediate();
       try {
+        const removedAnnotationIds = useAnnotationStore
+          .getState()
+          .annotations.filter((annotation) => annotation.targetNodeId === nodeId)
+          .map((annotation) => annotation.id);
         await deleteBoardNode(boardId, nodeId);
         useBoardStore.getState().removeNode(nodeId);
         useAnnotationStore.getState().removeForNode(nodeId);
+        useReviewStore.getState().removeForAnnotations(removedAnnotationIds);
         useCanvasUiStore.getState().selectNode(null);
         saveCoordinator.finishImmediate();
       } catch (caughtError) {
@@ -419,6 +457,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
       saveCoordinator.beginImmediate();
       try {
         await deleteAnnotation(boardId, annotationId);
+        useReviewStore.getState().removeForAnnotation(annotationId);
         saveCoordinator.finishImmediate();
       } catch (caughtError) {
         useAnnotationStore.getState().add(annotation);
@@ -460,6 +499,127 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
       }
     },
     [queueNodeSave],
+  );
+
+  const handleCreateThread = useCallback(
+    async (annotationId: string, body: string) => {
+      if (!identity) return;
+      const threadDraft = createCommentThreadDraft({
+        boardId,
+        annotationId,
+        guestId: identity.id,
+      });
+      const commentDraft = createCommentDraft({
+        threadId: threadDraft.id,
+        authorId: identity.id,
+        authorName: identity.displayName,
+        body,
+      });
+      let savedThread: Awaited<ReturnType<typeof createCommentThread>> | null = null;
+
+      saveCoordinator.beginImmediate();
+      try {
+        savedThread = await createCommentThread(threadDraft);
+        const savedComment = await createReviewComment(commentDraft);
+        const reviewThread = groupCommentsByThread([savedThread], [savedComment])[0];
+        useReviewStore.getState().add(reviewThread);
+        saveCoordinator.finishImmediate();
+      } catch (caughtError) {
+        if (savedThread) {
+          useReviewStore.getState().add(groupCommentsByThread([savedThread], [])[0]);
+        }
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Could not create comment thread.";
+        saveCoordinator.failImmediate(message);
+        throw caughtError;
+      }
+    },
+    [boardId, identity, saveCoordinator],
+  );
+
+  const handleReply = useCallback(
+    async (threadId: string, body: string) => {
+      if (!identity) return;
+      const comment = createCommentDraft({
+        threadId,
+        authorId: identity.id,
+        authorName: identity.displayName,
+        body,
+      });
+      saveCoordinator.beginImmediate();
+      try {
+        const saved = await createReviewComment(comment);
+        useReviewStore.getState().addComment(threadId, saved);
+        saveCoordinator.finishImmediate();
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Could not send reply.";
+        saveCoordinator.failImmediate(message);
+        throw caughtError;
+      }
+    },
+    [identity, saveCoordinator],
+  );
+
+  const handleThreadStatusChange = useCallback(
+    async (thread: ReviewThread, status: ThreadStatus) => {
+      if (!identity) return;
+      saveCoordinator.beginImmediate();
+      try {
+        const saved = await updateCommentThreadStatus(thread.id, status, identity.id);
+        useReviewStore.getState().replace(
+          reviewThreadSchema.parse({
+            ...thread,
+            ...saved,
+            latestActivityAt: saved.updatedAt,
+          }),
+        );
+        saveCoordinator.finishImmediate();
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Could not update comment thread.";
+        saveCoordinator.failImmediate(message);
+        throw caughtError;
+      }
+    },
+    [identity, saveCoordinator],
+  );
+
+  const handleSelectThread = useCallback((thread: ReviewThread) => {
+    const annotation = useAnnotationStore.getState().get(thread.annotationId);
+    if (!annotation) return;
+    const ui = useCanvasUiStore.getState();
+    ui.setAnnotationsVisible(true);
+    ui.openReviewPanel(annotation.id);
+    ui.selectNode(annotation.targetNodeId ?? null);
+    useBoardStore.getState().setNodes(
+      useBoardStore.getState().nodes.map((node) => ({
+        ...node,
+        selected: node.id === annotation.targetNodeId,
+      })),
+    );
+    if (ui.annotationMode) ui.setAnnotationTool("SELECT");
+  }, []);
+
+  const handleReviewAction = useCallback(
+    async (action: ReviewAction) => {
+      if (!board || reviewStatusUpdating) return;
+      const status = transitionBoardStatus(board.status, action);
+      setReviewStatusUpdating(true);
+      saveCoordinator.beginImmediate();
+      try {
+        const savedBoard = await updateBoardStatus(board.id, status);
+        setBoard(savedBoard);
+        saveCoordinator.finishImmediate();
+      } catch (caughtError) {
+        saveCoordinator.failImmediate(
+          caughtError instanceof Error ? caughtError.message : "Could not update review status.",
+        );
+      } finally {
+        setReviewStatusUpdating(false);
+      }
+    },
+    [board, reviewStatusUpdating, saveCoordinator],
   );
 
   const actions: BoardNodeActions = { updateNode, commitResize, uploadImage };
@@ -526,10 +686,24 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
           <div className="min-w-0">
             <h1 className="truncate text-sm font-bold text-[#253348]">{board.title}</h1>
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#92949a]">
-              {board.status.replace("_", " ")}
+              {board.status.replaceAll("_", " ")}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <ReviewStatusActions
+              status={board.status}
+              openCount={threadCounts.open}
+              updating={reviewStatusUpdating}
+              onAction={handleReviewAction}
+            />
+            <button
+              type="button"
+              data-testid="open-comments"
+              onClick={() => useCanvasUiStore.getState().openReviewPanel(null)}
+              className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#a8a398]"
+            >
+              Comments {threadCounts.open}
+            </button>
             <span className="hidden text-xs font-medium text-[#74777d] xl:block">
               {identity.displayName}
             </span>
@@ -615,11 +789,14 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
                 style={annotationStyle}
                 overlayOpacity={annotationOverlayOpacity}
                 annotationsVisible={annotationsVisible}
+                resolvedAnnotationIds={resolvedAnnotationIds}
                 selectedAnnotationId={selectedAnnotationId}
                 onCreate={handleCreateAnnotation}
-                onSelect={(annotationId) =>
-                  useCanvasUiStore.getState().selectAnnotation(annotationId)
-                }
+                onSelect={(annotationId) => {
+                  const ui = useCanvasUiStore.getState();
+                  if (annotationId) ui.openReviewPanel(annotationId);
+                  else ui.selectAnnotation(null);
+                }}
               />
             </ReactFlow>
             {annotationMode && (
@@ -632,7 +809,26 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
               />
             )}
           </section>
-          <PropertiesPanel onDelete={deleteNode} />
+          {reviewPanelOpen ? (
+            <ReviewPanel
+              annotations={annotations}
+              identity={identity}
+              threads={threads}
+              selectedAnnotationId={selectedAnnotationId}
+              filter={threadFilter}
+              openCount={threadCounts.open}
+              resolvedCount={threadCounts.resolved}
+              onFilterChange={(filter) => useCanvasUiStore.getState().setThreadFilter(filter)}
+              onClose={() => useCanvasUiStore.getState().closeReviewPanel()}
+              onShowAll={() => useCanvasUiStore.getState().openReviewPanel(null)}
+              onSelectThread={handleSelectThread}
+              onCreateThread={handleCreateThread}
+              onReply={handleReply}
+              onStatusChange={handleThreadStatusChange}
+            />
+          ) : (
+            <PropertiesPanel onDelete={deleteNode} />
+          )}
         </div>
       </main>
     </BoardNodeActionsContext.Provider>

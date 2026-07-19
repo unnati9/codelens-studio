@@ -55,6 +55,7 @@ type AnnotationLayerProps = {
   style: AnnotationStyle;
   overlayOpacity: number;
   annotationsVisible: boolean;
+  resolvedAnnotationIds?: ReadonlySet<string>;
   selectedAnnotationId: string | null;
   onCreate: (input: NewAnnotationInput) => void;
   onSelect: (annotationId: string | null) => void;
@@ -197,6 +198,7 @@ function AnnotationShape({
   viewport,
   selected,
   selectable,
+  resolved = false,
   onSelect,
 }: {
   id: string;
@@ -205,6 +207,7 @@ function AnnotationShape({
   viewport: FlowViewport;
   selected: boolean;
   selectable: boolean;
+  resolved?: boolean;
   onSelect: () => void;
 }) {
   const strokeWidth = Math.max(0.5, style.strokeWidth * viewport.zoom);
@@ -317,8 +320,8 @@ function AnnotationShape({
   }
 
   return (
-    <g data-testid={`annotation-${id}`} opacity={style.opacity}>
-      {shape}
+    <g data-testid={`annotation-${id}`}>
+      <g opacity={style.opacity * (resolved ? 0.35 : 1)}>{shape}</g>
       {selected && (
         <rect
           data-testid="annotation-selection"
@@ -347,6 +350,7 @@ export function AnnotationLayer({
   style,
   overlayOpacity,
   annotationsVisible,
+  resolvedAnnotationIds = new Set<string>(),
   selectedAnnotationId,
   onCreate,
   onSelect,
@@ -464,7 +468,7 @@ export function AnnotationLayer({
     <svg
       data-testid="annotation-layer"
       aria-label="Tracing-paper annotation layer"
-      aria-hidden={!annotationMode}
+      aria-hidden={!annotationsVisible}
       className={`absolute inset-0 z-[1000] h-full w-full touch-none ${
         annotationMode
           ? activeTool === "SELECT"
@@ -517,7 +521,8 @@ export function AnnotationLayer({
               style={annotation.style}
               viewport={viewport}
               selected={selectedAnnotationId === annotation.id}
-              selectable={annotationMode && activeTool === "SELECT"}
+              selectable={!annotationMode || activeTool === "SELECT"}
+              resolved={resolvedAnnotationIds.has(annotation.id)}
               onSelect={() => onSelect(annotation.id)}
             />
           );

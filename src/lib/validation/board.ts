@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const boardStatusSchema = z.enum(["DRAFT", "IN_REVIEW", "APPROVED"]);
+export const boardStatusSchema = z.enum(["DRAFT", "IN_REVIEW", "CHANGES_REQUESTED", "APPROVED"]);
 
 export const boardSchema = z.object({
   id: z.string().uuid(),
