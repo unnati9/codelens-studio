@@ -21,6 +21,7 @@ import {
   GitHubPrImportDialog,
   type GitHubImportResult,
 } from "@/components/github/github-pr-import-dialog";
+import { GitHubRepositoryDrawer } from "@/components/github/github-repository-drawer";
 import { ReviewPanel } from "@/components/review/review-panel";
 import { ReviewStatusActions } from "@/components/review/review-status-actions";
 import { Brand } from "@/components/ui/brand";
@@ -34,6 +35,7 @@ import {
   updateAnnotation,
 } from "@/lib/data/annotations";
 import { getBoard, updateBoardGitHubSource, updateBoardStatus } from "@/lib/data/boards";
+import { syncGitHubBoard } from "@/lib/data/github";
 import { uploadBoardImage } from "@/lib/data/media";
 import {
   createBoardNode,
@@ -51,6 +53,8 @@ import {
 import { useGuestIdentity } from "@/lib/guest/use-guest-identity";
 import { useBrowserSessionId } from "@/lib/guest/use-browser-session-id";
 import { buildImportedCodeNodeRecords } from "@/lib/github/import";
+import type { GitHubConnectedPullRequestRequest } from "@/lib/github/connected-schema";
+import type { GitHubBoardSyncResponse } from "@/lib/github/board-sync-schema";
 import type { GitHubChangedFile, GitHubPullRequest } from "@/lib/github/schema";
 import { serializeBoardNode, type BoardFlowNode } from "@/lib/nodes/serialization";
 import { AnnotationSaveCoordinator } from "@/lib/persistence/annotation-save-coordinator";
@@ -183,6 +187,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
   const [githubImportOpen, setGitHubImportOpen] = useState(false);
+  const [githubDrawerOpen, setGitHubDrawerOpen] = useState(false);
   const localNodeInteractions = useRef(new Set<string>());
   const nodes = useBoardStore((state) => state.nodes);
   const annotations = useAnnotationStore((state) => state.annotations);
@@ -251,6 +256,28 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [annotationMode, nodes],
   );
   const serializedNodes = useMemo(() => nodes.map(serializeBoardNode), [nodes]);
+  const staleGitHubNodeCount = useMemo(
+    () =>
+      serializedNodes.filter(
+        (node) => node.content.kind === "code" && node.content.source?.isStale === true,
+      ).length,
+    [serializedNodes],
+  );
+
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.get("github") !== "connected") return;
+    const timer = window.setTimeout(() => {
+      setGitHubDrawerOpen(true);
+      currentUrl.searchParams.delete("github");
+      window.history.replaceState(
+        null,
+        "",
+        `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const reconcileWorkspace = useCallback(async () => {
     await Promise.all([saveCoordinator.flush(), annotationSaveCoordinator.flush()]);
@@ -787,6 +814,27 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [board, reviewStatusUpdating, saveCoordinator],
   );
 
+  const handleGitHubSync = useCallback(
+    async (selection?: GitHubConnectedPullRequestRequest): Promise<GitHubBoardSyncResponse> => {
+      saveCoordinator.beginImmediate();
+      try {
+        const result = await syncGitHubBoard({ boardId, selection });
+        setBoard(result.board);
+        for (const record of result.staleNodes) {
+          useBoardStore.getState().replaceRecord(record);
+        }
+        saveCoordinator.finishImmediate();
+        return result;
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Could not sync the pull request.";
+        saveCoordinator.failImmediate(message);
+        throw caughtError;
+      }
+    },
+    [boardId, saveCoordinator],
+  );
+
   const handleGitHubImport = useCallback(
     async (
       pullRequest: GitHubPullRequest,
@@ -816,6 +864,14 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
           pullRequestNumber: pullRequest.pullNumber,
           pullRequestUrl: pullRequest.htmlUrl,
           headCommitSha: pullRequest.headCommitSha,
+          baseBranch: pullRequest.baseBranch,
+          headBranch: pullRequest.headBranch,
+          baseCommitSha: pullRequest.baseCommitSha,
+          authorLogin: pullRequest.authorLogin,
+          pullRequestTitle: pullRequest.title,
+          pullRequestDescription: pullRequest.description,
+          changedFileCount: pullRequest.changedFileCount,
+          lastSyncedAt: importedAt,
           lastImportedAt: importedAt,
         });
         setBoard(savedBoard);
@@ -907,6 +963,17 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-3">
+            {board.source_type === "GITHUB_PR" && (
+              <button
+                type="button"
+                data-testid="open-github-pr"
+                onClick={() => setGitHubDrawerOpen(true)}
+                className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#ff5a36]"
+                title={`${board.github_owner}/${board.github_repository} #${board.github_pull_request_number}`}
+              >
+                Sync PR{staleGitHubNodeCount > 0 ? ` · ${staleGitHubNodeCount} stale` : ""}
+              </button>
+            )}
             <ReviewStatusActions
               status={board.status}
               openCount={threadCounts.open}
@@ -941,7 +1008,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             onAddImage={() => void addNode("image")}
             onImportGitHub={() => {
               if (annotationMode) useCanvasUiStore.getState().exitAnnotationMode();
-              setGitHubImportOpen(true);
+              setGitHubDrawerOpen(true);
             }}
             annotationMode={annotationMode}
             onToggleAnnotations={() => {
@@ -1056,6 +1123,19 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             <PropertiesPanel onDelete={deleteNode} />
           )}
         </div>
+        {githubDrawerOpen && (
+          <GitHubRepositoryDrawer
+            board={board}
+            existingNodes={serializedNodes}
+            onClose={() => setGitHubDrawerOpen(false)}
+            onUsePublicImport={() => {
+              setGitHubDrawerOpen(false);
+              setGitHubImportOpen(true);
+            }}
+            onSync={handleGitHubSync}
+            onImport={handleGitHubImport}
+          />
+        )}
         {githubImportOpen && (
           <GitHubPrImportDialog
             boardId={boardId}

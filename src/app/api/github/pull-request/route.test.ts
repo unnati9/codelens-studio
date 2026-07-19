@@ -10,6 +10,7 @@ const rawPullRequest = {
   merged_at: null,
   base: {
     ref: "main",
+    sha: "fedcba9876543210fedcba9876543210fedcba98",
     repo: { full_name: "octocat/Hello-World", private: false },
   },
   head: { ref: "feature/review", sha: "0123456789abcdef0123456789abcdef01234567" },

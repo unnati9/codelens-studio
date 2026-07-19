@@ -1,4 +1,9 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { z } from "zod";
+import {
+  githubBoardSourceResponseSchema,
+  type GitHubBoardSourceInput,
+} from "@/lib/github/board-source-schema";
 import { boardSchema, type Board, type BoardStatus } from "@/lib/validation/board";
 
 export async function listBoards(): Promise<Board[]> {
@@ -45,6 +50,14 @@ export async function createBoard(input: {
     github_pull_request_number: null,
     github_pull_request_url: null,
     github_head_sha: null,
+    github_base_branch: null,
+    github_head_branch: null,
+    github_base_sha: null,
+    github_author_login: null,
+    github_pull_request_title: null,
+    github_pull_request_description: null,
+    github_changed_file_count: null,
+    github_last_synced_at: null,
     last_imported_at: null,
     created_by: input.guestId,
     created_at: now,
@@ -89,33 +102,19 @@ export async function updateBoardStatus(boardId: string, status: BoardStatus): P
 
 export async function updateBoardGitHubSource(
   boardId: string,
-  source: {
-    owner: string;
-    repository: string;
-    pullRequestNumber: number;
-    pullRequestUrl: string;
-    headCommitSha: string;
-    lastImportedAt: string;
-  },
+  source: GitHubBoardSourceInput,
 ): Promise<Board> {
-  const { data, error } = await getSupabaseBrowserClient()
-    .from("boards")
-    .update({
-      source_type: "GITHUB_PR",
-      github_owner: source.owner,
-      github_repository: source.repository,
-      github_pull_request_number: source.pullRequestNumber,
-      github_pull_request_url: source.pullRequestUrl,
-      github_head_sha: source.headCommitSha,
-      last_imported_at: source.lastImportedAt,
-    })
-    .eq("id", boardId)
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Could not save GitHub source metadata: ${error.message}`);
+  const response = await fetch("/api/github/boards/source", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ boardId, source }),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const parsed = z.object({ error: z.object({ message: z.string().min(1) }) }).safeParse(body);
+    throw new Error(
+      parsed.success ? parsed.data.error.message : "Could not save GitHub source metadata.",
+    );
   }
-
-  return boardSchema.parse(data);
+  return githubBoardSourceResponseSchema.parse(body).board;
 }

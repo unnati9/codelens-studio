@@ -20,6 +20,7 @@ const pullRequest = githubPullRequestSchema.parse({
   authorAvatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
   state: "OPEN",
   baseBranch: "main",
+  baseCommitSha: "fedcba9876543210fedcba9876543210fedcba98",
   headBranch: "feature/review",
   headCommitSha: "0123456789abcdef0123456789abcdef01234567",
   htmlUrl: "https://github.com/octocat/Hello-World/pull/42",
@@ -123,6 +124,13 @@ describe("GitHub file import utilities", () => {
       kind: "code",
       filename: "src/component.tsx",
       source: { sourceType: "GITHUB_PR", patchAvailable: true },
+    });
+    expect(records[0].content).toMatchObject({
+      source: {
+        isStale: false,
+        staleAt: null,
+        latestHeadCommitSha: pullRequest.headCommitSha,
+      },
     });
   });
 

@@ -38,6 +38,7 @@ export const githubPullRequestSchema = z.object({
   authorAvatarUrl: z.url(),
   state: z.enum(["OPEN", "CLOSED", "MERGED"]),
   baseBranch: z.string().min(1).max(1024),
+  baseCommitSha: z.string().regex(/^[a-f0-9]{7,64}$/i),
   headBranch: z.string().min(1).max(1024),
   headCommitSha: z.string().regex(/^[a-f0-9]{7,64}$/i),
   htmlUrl: z.url(),
@@ -74,7 +75,7 @@ export type GitHubPullRequestLocator = z.infer<typeof githubPullRequestLocatorSc
 export type GitHubChangedFile = z.infer<typeof githubChangedFileSchema>;
 export type GitHubPullRequest = z.infer<typeof githubPullRequestSchema>;
 
-const githubPullRequestApiSchema = z.object({
+export const githubPullRequestApiSchema = z.object({
   number: z.number().int().positive(),
   title: z.string().min(1),
   body: z.string().nullable(),
@@ -86,6 +87,7 @@ const githubPullRequestApiSchema = z.object({
   merged_at: z.string().datetime({ offset: true }).nullable(),
   base: z.object({
     ref: z.string().min(1),
+    sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
     repo: z.object({
       full_name: z.string().min(3),
       private: z.boolean(),
@@ -101,7 +103,7 @@ const githubPullRequestApiSchema = z.object({
   changed_files: z.number().int().nonnegative(),
 });
 
-const githubChangedFileApiSchema = z.object({
+export const githubChangedFileApiSchema = z.object({
   filename: z.string().min(1),
   previous_filename: z.string().min(1).optional(),
   status: githubFileStatusSchema,
@@ -145,6 +147,7 @@ export function normalizeGitHubPullRequest(input: {
     authorAvatarUrl: pullRequest.user.avatar_url,
     state: pullRequest.merged_at ? "MERGED" : pullRequest.state === "open" ? "OPEN" : "CLOSED",
     baseBranch: pullRequest.base.ref,
+    baseCommitSha: pullRequest.base.sha,
     headBranch: pullRequest.head.ref,
     headCommitSha: pullRequest.head.sha,
     htmlUrl: pullRequest.html_url,

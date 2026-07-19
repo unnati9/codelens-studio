@@ -48,6 +48,36 @@ describe("boardNodeSchema", () => {
   it("rejects dimensions below the canvas minimum", () => {
     expect(boardNodeSchema.safeParse({ ...baseNode, width: 120 }).success).toBe(false);
   });
+
+  it("loads legacy GitHub code sources as current by default", () => {
+    const parsed = boardNodeSchema.parse({
+      ...baseNode,
+      content: {
+        ...baseNode.content,
+        source: {
+          sourceType: "GITHUB_PR",
+          sourceKey: "github-pr:board:octocat/hello-world:42:abc1234:review.ts",
+          repository: "octocat/Hello-World",
+          pullRequestNumber: 42,
+          headCommitSha: "abcdef1234567",
+          filePath: "review.ts",
+          previousFilePath: null,
+          fileStatus: "modified",
+          additions: 1,
+          deletions: 1,
+          blobUrl: null,
+          rawUrl: null,
+          pullRequestUrl: "https://github.com/octocat/Hello-World/pull/42",
+          patchAvailable: true,
+          importedAt: "2026-07-18T09:00:00.000Z",
+        },
+      },
+    });
+
+    expect(parsed.content).toMatchObject({
+      source: { isStale: false, staleAt: null, latestHeadCommitSha: null },
+    });
+  });
 });
 
 describe("boardStatusSchema", () => {
@@ -69,5 +99,54 @@ describe("boardSchema source compatibility", () => {
         updated_at: "2026-07-19T08:00:00.000Z",
       }),
     ).toMatchObject({ title: "Manual review board", source_type: null });
+  });
+
+  it("allows linking a GitHub pull request before files are imported", () => {
+    const linked = boardSchema.parse({
+      id: "40ad7bd7-b5f4-4374-8c77-15219478ce2b",
+      title: "Pull request review",
+      description: null,
+      status: "DRAFT",
+      source_type: "GITHUB_PR",
+      github_owner: "octocat",
+      github_repository: "Hello-World",
+      github_pull_request_number: 42,
+      github_pull_request_url: "https://github.com/octocat/Hello-World/pull/42",
+      github_head_sha: "0123456789abcdef0123456789abcdef01234567",
+      github_base_branch: "main",
+      github_head_branch: "feature/review",
+      github_base_sha: "abcdef0123456789abcdef0123456789abcdef01",
+      github_author_login: "octocat",
+      github_pull_request_title: "Add a review flow",
+      github_pull_request_description: "Ready for review.",
+      github_changed_file_count: 3,
+      github_last_synced_at: "2026-07-19T09:00:00.000Z",
+      last_imported_at: null,
+      created_by: "guest-1",
+      created_at: "2026-07-19T08:00:00.000Z",
+      updated_at: "2026-07-19T09:00:00.000Z",
+    });
+
+    expect(linked).toMatchObject({
+      source_type: "GITHUB_PR",
+      last_imported_at: null,
+      github_base_branch: "main",
+      github_changed_file_count: 3,
+    });
+  });
+
+  it("rejects a GitHub source without its stable pull-request identity", () => {
+    const result = boardSchema.safeParse({
+      id: "40ad7bd7-b5f4-4374-8c77-15219478ce2b",
+      title: "Incomplete pull request",
+      description: null,
+      status: "DRAFT",
+      source_type: "GITHUB_PR",
+      created_by: "guest-1",
+      created_at: "2026-07-19T08:00:00.000Z",
+      updated_at: "2026-07-19T08:00:00.000Z",
+    });
+
+    expect(result.success).toBe(false);
   });
 });
