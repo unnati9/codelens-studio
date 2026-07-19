@@ -4,7 +4,7 @@
 
 1. Create a Supabase project in the region nearest the demo venue.
 2. Open the SQL Editor and run
-   `supabase/migrations/202607180001_day1_foundation.sql`.
+   every file in `supabase/migrations` in filename order.
 3. Confirm that `boards` and `board_nodes` appear in the Table Editor.
 4. Confirm that the public `board-media` bucket appears in Storage with an 8 MB limit and PNG,
    JPEG, and WebP MIME restrictions.
@@ -21,14 +21,17 @@ Do not copy or expose the service-role key. The application does not use it.
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
    - `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=board-media` (optional because this is the default)
+   - `GITHUB_TOKEN` (optional, server-only, raises public GitHub API rate limits)
+   - `GITHUB_PR_MAX_FILES=300` (optional)
+   - `GITHUB_IMPORT_LIMIT=20` (optional)
 
 4. Deploy the application.
 5. Open `/api/health`. A successful deployment returns HTTP 200 with both `database` and `storage`
    set to `true`.
 
 The application uses standard Next.js output and has no filesystem persistence, background worker,
-microservice, server-only secret, or platform-specific runtime dependency. It can run on any host
-supporting Next.js 16 and Node.js 20.9 or newer.
+microservice, or platform-specific runtime dependency. It can run on any host supporting Next.js 16
+and Node.js 20.9 or newer. If configured, `GITHUB_TOKEN` must remain server-only.
 
 ## Day 1 acceptance gate
 

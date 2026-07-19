@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardNodeSchema, boardStatusSchema } from "./board";
+import { boardNodeSchema, boardSchema, boardStatusSchema } from "./board";
 
 const baseNode = {
   id: "a9c28c6e-34e3-49d1-b6ea-258b2487f414",
@@ -53,5 +53,21 @@ describe("boardNodeSchema", () => {
 describe("boardStatusSchema", () => {
   it("accepts a changes-requested review state", () => {
     expect(boardStatusSchema.parse("CHANGES_REQUESTED")).toBe("CHANGES_REQUESTED");
+  });
+});
+
+describe("boardSchema source compatibility", () => {
+  it("keeps manually created boards valid with nullable source metadata", () => {
+    expect(
+      boardSchema.parse({
+        id: "40ad7bd7-b5f4-4374-8c77-15219478ce2b",
+        title: "Manual review board",
+        description: null,
+        status: "DRAFT",
+        created_by: "guest-1",
+        created_at: "2026-07-19T08:00:00.000Z",
+        updated_at: "2026-07-19T08:00:00.000Z",
+      }),
+    ).toMatchObject({ title: "Manual review board", source_type: null });
   });
 });

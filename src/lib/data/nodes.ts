@@ -34,6 +34,22 @@ export async function createBoardNode(record: BoardNodeRecord): Promise<BoardNod
   return boardNodeSchema.parse(data);
 }
 
+export async function createBoardNodes(records: BoardNodeRecord[]): Promise<BoardNodeRecord[]> {
+  const validatedRecords = boardNodeArraySchema.parse(records);
+  if (validatedRecords.length === 0) return [];
+
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("board_nodes")
+    .insert(validatedRecords)
+    .select();
+
+  if (error) {
+    throw new Error(`Could not import code nodes: ${error.message}`);
+  }
+
+  return boardNodeArraySchema.parse(data);
+}
+
 export async function updateBoardNode(record: BoardNodeRecord): Promise<BoardNodeRecord> {
   const validatedRecord = boardNodeSchema.parse(record);
   const { data, error } = await getSupabaseBrowserClient()
