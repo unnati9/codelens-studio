@@ -44,3 +44,7 @@ export async function parseJsonRequest(request: Request): Promise<unknown> {
     return undefined;
   }
 }
+
+export function validateSameOrigin(request: Request): boolean {
+  return request.headers.get("origin") === new URL(request.url).origin;
+}

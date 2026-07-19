@@ -4,7 +4,8 @@ CodeLens Studio is a desktop-first spatial workspace for comparing source code w
 produces. This repository implements durable boards, editable code nodes, uploaded image nodes,
 movable and resizable React Flow layouts, a tracing-paper annotation layer, linked review comments,
 GitHub App repository and pull-request integration, read-only public pull-request import, and
-board-scoped realtime collaboration backed by Supabase.
+board-scoped realtime collaboration backed by Supabase. GitHub-linked boards also provide Vercel
+preview discovery and bounded affected-route analysis.
 
 Video, private-repository import, and AI features are intentionally not included in this milestone.
 
@@ -40,7 +41,7 @@ Requirements: Node.js 20.9 or newer, npm, and a Supabase project.
 The migrations create the board, node, annotation, comment-thread, and comment records, their
 update triggers and indexes, the public `board-media` storage bucket, prototype Row Level Security
 policies, repository preview configuration, and the Realtime publication entries used by
-collaboration.
+collaboration. The later migrations add repository route fallbacks and head-SHA analysis caching.
 
 ## Annotation coordinate model
 
@@ -130,6 +131,41 @@ and prompts a new refresh instead of presenting the old preview as current.
 The Vercel project ID is available in the project's **Settings > General** page. Add the team ID only
 for a team-scoped project. Use the stable production domain (for example,
 `https://codelens-studio.vercel.app`) as the production URL.
+
+## Affected-route analysis
+
+GitHub-linked boards expose an **Affected UI** panel. The server loads a bounded source snapshot at
+the board's current head SHA, parses static ES imports, export-from declarations, side-effect
+imports, and string-literal `require` calls, resolves relative paths and `tsconfig.json` or
+`jsconfig.json` aliases, then walks the reverse dependency graph from changed files toward route
+components. Results are Zod-validated and cached by normalized repository and head SHA. Updating the
+repository fallback configuration invalidates that cache entry.
+
+The analyzer supports TypeScript, JavaScript, TSX, and JSX for:
+
+- Next.js App Router `app` or `src/app` page and layout conventions, including route groups and
+  dynamic segments.
+- Next.js Pages Router `pages` or `src/pages`, excluding API routes and framework special pages.
+- React Router routes declared with common `<Route path element>` or static object-route forms.
+
+Root layouts, `_app`, global CSS, themes, providers, shared headers, and shared footers are treated as
+broad-impact changes. The panel shows confidence, direct/indirect/broad impact, related files, a
+representative import chain, dynamic-route warnings, setup requirements, and capture priority. It
+also supports manual routes, ignored routes, dynamic examples, route-to-source mappings, and setup
+instructions. This phase does not capture screenshots, instrument source code, generate routes with
+AI, or calculate visual differences.
+
+Default safety limits are an import depth of 8, 300 source files, 200,000 bytes per file, and 8
+seconds. Configure `AFFECTED_ROUTE_MAX_DEPTH`, `AFFECTED_ROUTE_MAX_FILES`,
+`AFFECTED_ROUTE_MAX_FILE_SIZE_BYTES`, and `AFFECTED_ROUTE_TIMEOUT_MS` to lower or raise those bounds
+within their hard caps. `GITHUB_TOKEN` remains optional but is recommended because an uncached
+analysis uses GitHub API capacity to read the repository tree and selected source blobs.
+
+Known unsupported patterns include computed or dynamic imports, runtime-generated route tables,
+custom Babel/Webpack/Vite alias plugins, non-static React Router nesting, deeply nested monorepo app
+roots, and dependencies available only in a removed file at the head commit. Use repository fallback
+mappings for those cases. Analysis is intentionally conservative and may require a manual route when
+a framework pattern is ambiguous.
 
 ## Realtime collaboration
 

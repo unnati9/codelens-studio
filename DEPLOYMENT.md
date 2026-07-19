@@ -37,6 +37,10 @@ Do not copy or expose the service-role key. The application does not use it.
    - `GITHUB_PR_MAX_FILES=300` (optional)
    - `GITHUB_IMPORT_LIMIT=20` (optional)
    - `VERCEL_TOKEN` (server-only; required for Vercel preview discovery and connection tests)
+   - `AFFECTED_ROUTE_MAX_DEPTH=8` (optional; hard cap 20)
+   - `AFFECTED_ROUTE_MAX_FILES=300` (optional; hard cap 1000)
+   - `AFFECTED_ROUTE_MAX_FILE_SIZE_BYTES=200000` (optional; hard cap 500000)
+   - `AFFECTED_ROUTE_TIMEOUT_MS=8000` (optional; hard cap 12000)
 
 4. Deploy the application.
 5. Open `/api/health`. A successful deployment returns HTTP 200 with both `database` and `storage`
@@ -89,8 +93,32 @@ must be public HTTPS URLs except for localhost during local development. CodeLen
 protected preview page and does not bypass Vercel Deployment Protection.
 
 If no deployment is found, the token lacks access, or Vercel reports a failure, the board shows the
-reason and the existing manual screenshot upload remains available. This phase does not capture a
-preview, render it in an iframe, compare images, discover routes, or publish GitHub Checks.
+reason and the existing manual screenshot upload remains available. The preview provider does not
+capture a preview, render it in an iframe, compare images, analyze routes, or publish GitHub Checks.
+
+## Affected-route analyzer setup
+
+Apply `202607190005_affected_route_analysis.sql` after the preview-deployment migration. It creates:
+
+- `repository_route_configs` for route mappings, dynamic examples, routes requiring setup, and
+  ignored routes.
+- `affected_route_analysis_cache` for validated results keyed by repository and head SHA.
+
+No additional secret is required. The analyzer uses the existing server-side `GITHUB_TOKEN` when it
+is available. Configure that token for reliable GitHub API capacity; it must never have a
+`NEXT_PUBLIC_` prefix. Linked private repositories remain unsupported under the prototype's public
+board policies.
+
+The default limits are 8 dependency levels, 300 source files, 200,000 bytes per source file, and an
+8-second source-loading and traversal budget. The optional `AFFECTED_ROUTE_*` variables listed above
+can adjust those values within hard caps. After deployment, open a GitHub-linked board, choose
+**Affected UI**, confirm the framework and routes, add a concrete example for each dynamic route,
+and record setup instructions for routes that require state or seeded data.
+
+The analyzer handles static TypeScript, JavaScript, JSX, and TSX dependency patterns for Next.js App
+Router, Next.js Pages Router, and common React Router declarations. It does not execute repository
+code, follow computed imports, interpret custom bundler alias plugins, infer routes with AI, capture
+screenshots, or create visual diffs.
 
 ## Day 1 acceptance gate
 
@@ -147,5 +175,8 @@ service-role key or delete pre-existing user data.
   route analysis, iframe preview, visual diff, GitHub Checks, or AI review.
 - Preview discovery supports Vercel only. It cannot discover projects the configured token cannot
   read, and it does not bypass Vercel Deployment Protection.
+- Affected-route analysis uses bounded static import heuristics. Dynamic imports, runtime route
+  construction, custom alias plugins, deeply nested monorepo app roots, and removed-file dependency
+  chains may require repository fallback mappings.
 - Disconnecting clears the local encrypted GitHub session; it does not uninstall the GitHub App or
   revoke its authorization on GitHub.

@@ -22,6 +22,7 @@ import {
   type GitHubImportResult,
 } from "@/components/github/github-pr-import-dialog";
 import { GitHubRepositoryDrawer } from "@/components/github/github-repository-drawer";
+import { AffectedUiPanel } from "@/components/affected-routes/affected-ui-panel";
 import {
   PreviewDeploymentPanel,
   previewDeploymentStatusLabel,
@@ -198,6 +199,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [githubImportOpen, setGitHubImportOpen] = useState(false);
   const [githubDrawerOpen, setGitHubDrawerOpen] = useState(false);
   const [previewDeploymentPanelOpen, setPreviewDeploymentPanelOpen] = useState(false);
+  const [affectedUiPanelOpen, setAffectedUiPanelOpen] = useState(false);
   const previewPollingAttempt = useRef(0);
   const [previewPollingError, setPreviewPollingError] = useState<string | null>(null);
   const localNodeInteractions = useRef(new Set<string>());
@@ -1006,6 +1008,17 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             {board.source_type === "GITHUB_PR" && (
               <button
                 type="button"
+                data-testid="open-affected-ui"
+                onClick={() => setAffectedUiPanelOpen(true)}
+                className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#ff5a36]"
+                title="Analyze routes affected by pull-request files"
+              >
+                Affected UI
+              </button>
+            )}
+            {board.source_type === "GITHUB_PR" && (
+              <button
+                type="button"
                 data-testid="open-preview-deployment"
                 onClick={() => setPreviewDeploymentPanelOpen(true)}
                 className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#ff5a36]"
@@ -1212,6 +1225,13 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
               setPreviewPollingError(null);
               setBoard(nextBoard);
             }}
+          />
+        )}
+        {affectedUiPanelOpen && (
+          <AffectedUiPanel
+            board={board}
+            createdBy={identity.id}
+            onClose={() => setAffectedUiPanelOpen(false)}
           />
         )}
       </main>
