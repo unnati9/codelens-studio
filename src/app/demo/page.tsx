@@ -9,7 +9,7 @@ export default function DemoPage() {
           <Brand compact />
         </div>
         <p className="mt-8 text-xs font-black uppercase tracking-[0.22em] text-[#ff8a70]">
-          Day 3 route reserved
+          Day 2 route reserved
         </p>
         <h1 className="mt-4 text-4xl font-black tracking-[-0.04em]">
           The seeded demo board is coming next.

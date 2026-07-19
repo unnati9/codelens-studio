@@ -51,12 +51,14 @@ export async function fetchGitHubRepositorySnapshot(input: {
   headSha: string;
   changedFiles: string[];
   limits: AffectedRouteAnalysisLimits;
+  accessToken: string;
 }): Promise<RepositorySourceSnapshot> {
   const deadline = Date.now() + input.limits.timeoutMs;
   const repositoryName = `${input.owner}/${input.repository}`;
   const basePath = `${githubApiBaseUrl}/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repository)}`;
   const tree = githubTreeSchema.parse(
     await githubJson(`${basePath}/git/trees/${encodeURIComponent(input.headSha)}?recursive=1`, {
+      accessToken: input.accessToken,
       timeoutMs: remainingTime(deadline),
       notFoundCode: "REPOSITORY_SOURCE_NOT_FOUND",
       notFoundMessage: "The repository source tree is unavailable for this commit.",
@@ -95,6 +97,7 @@ export async function fetchGitHubRepositorySnapshot(input: {
       try {
         blob = githubBlobSchema.parse(
           await githubJson(`${basePath}/git/blobs/${candidate.sha}`, {
+            accessToken: input.accessToken,
             timeoutMs: remainingTime(deadline),
             notFoundCode: "REPOSITORY_SOURCE_NOT_FOUND",
             notFoundMessage: `The source for ${candidate.path} is unavailable.`,
