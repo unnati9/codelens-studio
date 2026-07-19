@@ -30,7 +30,7 @@ export default function HomePage() {
             Boards
           </Link>
           <span className="rounded-full border border-[#d8d3c8] bg-white/70 px-3 py-1.5 text-xs">
-            Day 2 foundation
+            Day 3 foundation
           </span>
         </nav>
       </header>
