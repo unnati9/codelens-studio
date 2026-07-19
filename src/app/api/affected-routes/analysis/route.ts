@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { analyzeBoardAffectedRoutes } from "@/lib/affected-routes/service";
 import { affectedRouteAnalysisRequestSchema } from "@/lib/affected-routes/schema";
+import { getGitHubSession } from "@/lib/github/auth";
 import {
   githubInvalidRequestResponse,
   githubRouteError,
+  githubUnauthorizedResponse,
   parseJsonRequest,
   validateSameOrigin,
 } from "@/lib/github/route-response";
@@ -20,9 +22,14 @@ export async function POST(request: Request) {
       );
     }
     const parsed = affectedRouteAnalysisRequestSchema.safeParse(await parseJsonRequest(request));
+    const session = await getGitHubSession();
+    if (!session) return githubUnauthorizedResponse();
     if (!parsed.success) return githubInvalidRequestResponse("A valid board is required.");
     return NextResponse.json(
-      await analyzeBoardAffectedRoutes(parsed.data.boardId, parsed.data.force),
+      await analyzeBoardAffectedRoutes(parsed.data.boardId, {
+        accessToken: session.accessToken,
+        force: parsed.data.force,
+      }),
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
