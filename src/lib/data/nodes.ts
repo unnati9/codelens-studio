@@ -1,4 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { z } from "zod";
 import {
   boardNodeArraySchema,
   boardNodeSchema,
@@ -52,28 +53,21 @@ export async function createBoardNodes(records: BoardNodeRecord[]): Promise<Boar
 
 export async function updateBoardNode(record: BoardNodeRecord): Promise<BoardNodeRecord> {
   const validatedRecord = boardNodeSchema.parse(record);
-  const { data, error } = await getSupabaseBrowserClient()
-    .from("board_nodes")
-    .update({
-      title: validatedRecord.title,
-      position_x: validatedRecord.position_x,
-      position_y: validatedRecord.position_y,
-      width: validatedRecord.width,
-      height: validatedRecord.height,
-      z_index: validatedRecord.z_index,
-      locked: validatedRecord.locked,
-      content: validatedRecord.content,
-    })
-    .eq("id", validatedRecord.id)
-    .eq("board_id", validatedRecord.board_id)
-    .select()
-    .single();
+  const response = await fetch("/api/board-nodes/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node: validatedRecord }),
+  });
+  const responseBody: unknown = await response.json().catch(() => null);
 
-  if (error) {
-    throw new Error(`Could not save node: ${error.message}`);
+  if (!response.ok) {
+    const parsedError = z
+      .object({ error: z.object({ message: z.string().min(1) }) })
+      .safeParse(responseBody);
+    throw new Error(parsedError.success ? parsedError.data.error.message : "Could not save node.");
   }
 
-  return boardNodeSchema.parse(data);
+  return z.object({ node: boardNodeSchema }).parse(responseBody).node;
 }
 
 export async function deleteBoardNode(boardId: string, nodeId: string): Promise<void> {
