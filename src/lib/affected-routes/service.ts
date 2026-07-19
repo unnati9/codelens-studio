@@ -12,7 +12,7 @@ import {
   type RepositoryRouteConfigInput,
 } from "@/lib/affected-routes/schema";
 import { GitHubImportError, asGitHubImportError } from "@/lib/github/pull-request";
-import { fetchPublicGitHubPullRequest } from "@/lib/github/server";
+import { fetchGitHubPullRequest } from "@/lib/github/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { boardSchema, type Board } from "@/lib/validation/board";
 
@@ -172,13 +172,17 @@ async function saveCachedAnalysis(
 
 export async function analyzeBoardAffectedRoutes(
   boardId: string,
-  force = false,
+  options: { accessToken: string; force?: boolean },
 ): Promise<AffectedRouteAnalysisResponse> {
   try {
+    const accessToken = options.accessToken.trim();
+    if (!accessToken) {
+      throw new GitHubImportError("GITHUB_AUTH_REQUIRED", "Connect GitHub first.", 401);
+    }
     const board = await loadBoard(boardId);
     const repository = linkedRepository(board);
     const config = await loadConfig(board);
-    if (!force) {
+    if (!options.force) {
       const cached = await loadCachedAnalysis(repository, config);
       if (cached) {
         return affectedRouteAnalysisResponseSchema.parse({
@@ -189,12 +193,12 @@ export async function analyzeBoardAffectedRoutes(
       }
     }
 
-    const pullRequest = await fetchPublicGitHubPullRequest({
+    const pullRequest = await fetchGitHubPullRequest({
       owner: repository.owner,
       repository: repository.repository,
       pullNumber: repository.pullNumber,
       canonicalUrl: board.github_pull_request_url!,
-    });
+    }, { accessToken, allowPrivate: true });
     if (pullRequest.headCommitSha.toLowerCase() !== repository.headSha.toLowerCase()) {
       throw new GitHubImportError(
         "BOARD_SOURCE_STALE",
@@ -209,6 +213,7 @@ export async function analyzeBoardAffectedRoutes(
       headSha: repository.headSha,
       changedFiles: pullRequest.files.map((file) => file.filename),
       limits,
+      accessToken,
     });
     const analysis = analyzeAffectedRoutes({
       snapshot,
