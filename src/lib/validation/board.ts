@@ -5,6 +5,18 @@ export const boardStatusSchema = z.enum(["DRAFT", "IN_REVIEW", "CHANGES_REQUESTE
 
 export const boardSourceTypeSchema = z.literal("GITHUB_PR");
 
+export const previewDeploymentProviderSchema = z.literal("VERCEL");
+
+export const previewDeploymentStatusSchema = z.enum([
+  "QUEUED",
+  "BUILDING",
+  "READY",
+  "FAILED",
+  "CANCELLED",
+  "NOT_FOUND",
+  "ACCESS_REQUIRED",
+]);
+
 export const boardSchema = z
   .object({
     id: z.string().uuid(),
@@ -34,6 +46,19 @@ export const boardSchema = z
     github_changed_file_count: z.number().int().nonnegative().nullable().default(null),
     github_last_synced_at: z.string().datetime({ offset: true }).nullable().default(null),
     last_imported_at: z.string().datetime({ offset: true }).nullable().default(null),
+    preview_provider: previewDeploymentProviderSchema.nullable().default(null),
+    preview_base_url: z.url().nullable().default(null),
+    preview_url: z.url().nullable().default(null),
+    preview_deployment_id: z.string().min(1).max(255).nullable().default(null),
+    preview_deployment_status: previewDeploymentStatusSchema.nullable().default(null),
+    preview_commit_sha: z
+      .string()
+      .regex(/^[a-f0-9]{7,64}$/i)
+      .nullable()
+      .default(null),
+    preview_branch: z.string().min(1).max(1024).nullable().default(null),
+    preview_last_checked_at: z.string().datetime({ offset: true }).nullable().default(null),
+    preview_failure_reason: z.string().max(2048).nullable().default(null),
     created_by: z.string().min(1),
     created_at: z.string().datetime({ offset: true }),
     updated_at: z.string().datetime({ offset: true }),
@@ -135,6 +160,8 @@ export const boardNodeArraySchema = z.array(boardNodeSchema);
 export type Board = z.infer<typeof boardSchema>;
 export type BoardStatus = z.infer<typeof boardStatusSchema>;
 export type BoardSourceType = z.infer<typeof boardSourceTypeSchema>;
+export type PreviewDeploymentProvider = z.infer<typeof previewDeploymentProviderSchema>;
+export type PreviewDeploymentStatus = z.infer<typeof previewDeploymentStatusSchema>;
 export type GitHubCodeSource = z.infer<typeof githubCodeSourceSchema>;
 export type CodeNodeContent = z.infer<typeof codeNodeContentSchema>;
 export type ImageNodeContent = z.infer<typeof imageNodeContentSchema>;

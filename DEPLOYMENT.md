@@ -36,6 +36,7 @@ Do not copy or expose the service-role key. The application does not use it.
    - `GITHUB_OPEN_PR_LIST_LIMIT=300` (optional)
    - `GITHUB_PR_MAX_FILES=300` (optional)
    - `GITHUB_IMPORT_LIMIT=20` (optional)
+   - `VERCEL_TOKEN` (server-only; required for Vercel preview discovery and connection tests)
 
 4. Deploy the application.
 5. Open `/api/health`. A successful deployment returns HTTP 200 with both `database` and `storage`
@@ -69,6 +70,27 @@ board verifies the selected installation and repository again on the server befo
 The `202607190003_github_repository_integration.sql` migration extends boards with branch, SHA,
 author, title, description, changed-file-count, and sync-time metadata. Run it after the earlier
 migrations. Existing manual boards and nodes remain valid because all new columns are nullable.
+
+## Vercel preview provider setup
+
+1. Apply `202607190004_preview_deployment_discovery.sql` after the existing migrations. It creates
+   repository-level provider configuration and adds nullable deployment-result fields to `boards`.
+2. Create a Vercel access token for an account that can read the deployed project. Add it to the host
+   as the server-only `VERCEL_TOKEN`; do not prefix it with `NEXT_PUBLIC_`.
+3. On a GitHub-linked CodeLens board, open **Preview** and enter the Vercel project ID from the
+   Vercel project's **Settings > General** page. For team-scoped projects, also enter the team ID.
+4. Enter the stable public production URL, enable discovery, and choose **Test connection**. Save the
+   repository configuration, then choose **Refresh deployment** as needed.
+
+CodeLens uses Vercel's deployment API and matches the PR head SHA first, with branch as a fallback.
+Queued and building deployments are polled only while their board is open. API requests have a
+12-second timeout, reject redirects, and are limited to `https://api.vercel.com`; discovered URLs
+must be public HTTPS URLs except for localhost during local development. CodeLens does not request a
+protected preview page and does not bypass Vercel Deployment Protection.
+
+If no deployment is found, the token lacks access, or Vercel reports a failure, the board shows the
+reason and the existing manual screenshot upload remains available. This phase does not capture a
+preview, render it in an iframe, compare images, discover routes, or publish GitHub Checks.
 
 ## Day 1 acceptance gate
 
@@ -120,7 +142,10 @@ service-role key or delete pre-existing user data.
 - Private repositories are visible in the selector but cannot be linked or imported while prototype
   board and node policies allow anonymous reads. Public RLS must be replaced before private code can
   be stored safely.
-- GitHub synchronization is manual. This phase has no webhooks, preview-deployment discovery,
-  screenshot capture, route analysis, GitHub Checks, or AI review.
+- GitHub synchronization and deployment refresh are manual entry points; only queued and building
+  deployment states poll while a board is open. This phase has no webhooks, screenshot capture,
+  route analysis, iframe preview, visual diff, GitHub Checks, or AI review.
+- Preview discovery supports Vercel only. It cannot discover projects the configured token cannot
+  read, and it does not bypass Vercel Deployment Protection.
 - Disconnecting clears the local encrypted GitHub session; it does not uninstall the GitHub App or
   revoke its authorization on GitHub.

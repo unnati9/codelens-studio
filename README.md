@@ -23,6 +23,8 @@ Video, private-repository import, and AI features are intentionally not included
 - Vitest covers serialization, validation, and debounced persistence.
 - A server-only GitHub REST client lists authorized repositories, links pull requests, and imports
   selected patches without exposing tokens to the browser.
+- A server-only Vercel provider discovers production and pull-request preview deployments without
+  fetching or bypassing protected preview pages.
 
 ## Local setup
 
@@ -37,7 +39,8 @@ Requirements: Node.js 20.9 or newer, npm, and a Supabase project.
 
 The migrations create the board, node, annotation, comment-thread, and comment records, their
 update triggers and indexes, the public `board-media` storage bucket, prototype Row Level Security
-policies, and the Realtime publication entries used by collaboration.
+policies, repository preview configuration, and the Realtime publication entries used by
+collaboration.
 
 ## Annotation coordinate model
 
@@ -103,6 +106,30 @@ file, annotate its code node, attach and resolve a comment, wait for **Saved**, 
 commit to the PR, choose **Sync PR**, and confirm the prior imported node is marked stale while the
 manual board content remains intact. Re-select the updated file and confirm a new revision can be
 added without duplicating the old source key.
+
+## Vercel preview deployment discovery
+
+GitHub-linked boards can discover a Vercel preview without requiring each pull-request author to
+paste a URL. Open **Preview** in the board toolbar, enter the repository's Vercel project ID,
+optional team ID, and public production URL, then use **Test connection** and **Save configuration**.
+The configuration is stored once per GitHub repository and reused by its linked boards. Manual boards
+and the existing screenshot upload remain available.
+
+Set `VERCEL_TOKEN` in the server environment to a Vercel token that can read the configured project
+and team. It is never returned to the browser or stored in Supabase. CodeLens queries only the fixed
+Vercel API origin, rejects redirects, applies a request timeout, and validates discovered URLs as
+public HTTPS URLs. Local HTTP is accepted only during development. Deployment Protection is not
+bypassed; a protected preview must be opened using the reviewer's normal Vercel access.
+
+Discovery first asks Vercel for the pull request's head commit SHA and falls back to the head branch
+only when no SHA deployment exists. Statuses are Queued, Building, Ready, Failed, Cancelled, Not
+found, and Access required. Queued and Building results are polled with bounded backoff while the
+board is open. A GitHub **Sync PR** that detects a new head SHA marks the previous preview result old
+and prompts a new refresh instead of presenting the old preview as current.
+
+The Vercel project ID is available in the project's **Settings > General** page. Add the team ID only
+for a team-scoped project. Use the stable production domain (for example,
+`https://codelens-studio.vercel.app`) as the production URL.
 
 ## Realtime collaboration
 
