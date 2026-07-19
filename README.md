@@ -3,10 +3,10 @@
 CodeLens Studio is a desktop-first spatial workspace for comparing source code with the UI it
 produces. This repository implements durable boards, editable code nodes, uploaded image nodes,
 movable and resizable React Flow layouts, a tracing-paper annotation layer, linked review comments,
-read-only public GitHub pull-request import, and board-scoped realtime collaboration backed by
-Supabase.
+GitHub App repository and pull-request integration, read-only public pull-request import, and
+board-scoped realtime collaboration backed by Supabase.
 
-Video, private GitHub access, and AI features are intentionally not included in this milestone.
+Video, private-repository import, and AI features are intentionally not included in this milestone.
 
 ## Stack and dependency purpose
 
@@ -21,8 +21,8 @@ Video, private GitHub access, and AI features are intentionally not included in 
 - Zod validates every database record at the data boundary.
 - Zustand separates the persisted board mirror from transient selection and save-state UI.
 - Vitest covers serialization, validation, and debounced persistence.
-- A server-only GitHub REST client validates and imports public pull-request patches without exposing
-  tokens to the browser.
+- A server-only GitHub REST client lists authorized repositories, links pull requests, and imports
+  selected patches without exposing tokens to the browser.
 
 ## Local setup
 
@@ -51,7 +51,40 @@ The browser receives only `NEXT_PUBLIC_SUPABASE_URL` and a public Supabase API k
 can use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; the legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` name is
 also supported. Never add a Supabase service-role key to a `NEXT_PUBLIC_` variable.
 
-## Public GitHub pull-request import
+## GitHub repository and pull-request integration
+
+CodeLens can connect to a GitHub App using GitHub's user authorization flow. On a board, choose
+**GitHub**, connect the app, select an accessible repository, and select one of its open pull
+requests. Linking records the repository, pull-request number, branches, base and head SHAs, author,
+title, description, changed-file count, and last sync time without adding files to the canvas.
+
+The changed-file drawer lets the reviewer explicitly choose files to add as the existing CodeNode
+type. A stable key prevents duplicate imports for the same board, repository, pull request, head SHA,
+and filename. **Sync PR** detects a new head SHA and marks nodes imported from older revisions as
+stale; it does not delete or replace manual or imported nodes. The reviewer then chooses which
+updated files to add.
+
+Create a GitHub App with user authorization enabled and expiring user access tokens enabled. Grant
+only repository **Pull requests: Read-only**; GitHub also grants mandatory **Metadata: Read-only**.
+No Contents, Checks, write, webhook, organization, or account permission is required. Register these
+callback URLs for the relevant environment:
+
+- Local: `http://localhost:3000/api/github/auth/callback`
+- Production: `https://codelens-studio.vercel.app/api/github/auth/callback` (replace the origin when
+  deploying elsewhere)
+
+Set `APP_URL`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG`, and a random
+`GITHUB_SESSION_SECRET` of at least 32 bytes. `GITHUB_APP_CALLBACK_URL` is optional; when present, it
+must exactly equal `${APP_URL}/api/github/auth/callback`. All GitHub credentials are server-only and
+must not have a `NEXT_PUBLIC_` prefix. Access and refresh tokens are encrypted in an HttpOnly,
+SameSite=Lax cookie and refreshed server-side.
+
+Repositories must be installed for the GitHub App and accessible to the authorizing user. Private
+repositories are shown but disabled because this prototype's Supabase policies make boards publicly
+readable and writable; persisting private patches would be unsafe without first replacing that access
+model.
+
+## Public GitHub pull-request URL fallback
 
 On a board, choose **GitHub**, paste a URL in the form
 `https://github.com/{owner}/{repository}/pull/{pullNumber}`, inspect the changed files, and select up
@@ -63,10 +96,13 @@ an optional server-only token that raises rate limits. `GITHUB_PR_MAX_FILES` def
 controls how many changed files are inspected; `GITHUB_IMPORT_LIMIT` defaults to 20 and controls how
 many files can become nodes in one action. None of these variables may use a `NEXT_PUBLIC_` prefix.
 
-For a controlled test, open a small public PR that you own, ensure it includes one `.ts` or `.tsx`
-change and optionally one binary or lock-file change, then import it. Confirm source files are selected
-by default, non-source files are not, imported diffs are read-only, and importing the same SHA and
-filename again reports a skipped duplicate.
+For a controlled connected test, install the GitHub App on a test repository and open a small public
+PR containing one `.ts` or `.tsx` change and optionally one binary or lock-file change. Connect from a
+manual board, link that PR, and confirm no nodes are added until files are selected. Import one source
+file, annotate its code node, attach and resolve a comment, wait for **Saved**, and reload. Push a new
+commit to the PR, choose **Sync PR**, and confirm the prior imported node is marked stale while the
+manual board content remains intact. Re-select the updated file and confirm a new revision can be
+added without duplicating the old source key.
 
 ## Realtime collaboration
 

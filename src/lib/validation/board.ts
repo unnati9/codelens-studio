@@ -21,6 +21,18 @@ export const boardSchema = z
       .regex(/^[a-f0-9]{7,64}$/i)
       .nullable()
       .default(null),
+    github_base_branch: z.string().min(1).max(1024).nullable().default(null),
+    github_head_branch: z.string().min(1).max(1024).nullable().default(null),
+    github_base_sha: z
+      .string()
+      .regex(/^[a-f0-9]{7,64}$/i)
+      .nullable()
+      .default(null),
+    github_author_login: z.string().min(1).max(120).nullable().default(null),
+    github_pull_request_title: z.string().min(1).max(1024).nullable().default(null),
+    github_pull_request_description: z.string().nullable().default(null),
+    github_changed_file_count: z.number().int().nonnegative().nullable().default(null),
+    github_last_synced_at: z.string().datetime({ offset: true }).nullable().default(null),
     last_imported_at: z.string().datetime({ offset: true }).nullable().default(null),
     created_by: z.string().min(1),
     created_at: z.string().datetime({ offset: true }),
@@ -33,8 +45,7 @@ export const boardSchema = z
         !board.github_repository ||
         !board.github_pull_request_number ||
         !board.github_pull_request_url ||
-        !board.github_head_sha ||
-        !board.last_imported_at)
+        !board.github_head_sha)
     ) {
       context.addIssue({
         code: "custom",
@@ -60,6 +71,13 @@ export const githubCodeSourceSchema = z.object({
   pullRequestUrl: z.url(),
   patchAvailable: z.boolean(),
   importedAt: z.string().datetime({ offset: true }),
+  isStale: z.boolean().default(false),
+  staleAt: z.string().datetime({ offset: true }).nullable().default(null),
+  latestHeadCommitSha: z
+    .string()
+    .regex(/^[a-f0-9]{7,64}$/i)
+    .nullable()
+    .default(null),
 });
 
 export const codeNodeContentSchema = z.object({

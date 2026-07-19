@@ -35,6 +35,7 @@ export function CodeNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
   if (content.kind !== "code") return null;
   const source = content.source;
   const codeLines = content.code.split("\n");
+  const stale = source?.isStale === true;
 
   return (
     <article
@@ -45,7 +46,10 @@ export function CodeNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
       data-width={record.width}
       data-height={record.height}
       data-source-type={source?.sourceType}
-      className="flex h-full w-full flex-col overflow-hidden rounded-[18px] border border-[#bdc6d2] bg-[#132238] text-white shadow-[0_18px_45px_rgba(21,38,61,0.22)]"
+      data-source-stale={stale || undefined}
+      className={`flex h-full w-full flex-col overflow-hidden rounded-[18px] border bg-[#132238] text-white shadow-[0_18px_45px_rgba(21,38,61,0.22)] transition-opacity ${
+        stale ? "border-amber-400/80 opacity-70" : "border-[#bdc6d2]"
+      }`}
     >
       <NodeResizer
         isVisible={selected}
@@ -132,6 +136,15 @@ export function CodeNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
           <span className="text-white/45">
             {source.repository} #{source.pullRequestNumber}
           </span>
+          {stale && (
+            <span
+              data-testid="stale-github-source"
+              className="rounded bg-amber-300/20 px-2 py-1 text-amber-200"
+              title="This node was imported from an older pull-request revision."
+            >
+              Stale revision
+            </span>
+          )}
           {!source.patchAvailable && (
             <span className="rounded bg-amber-300/15 px-2 py-1 text-amber-200">
               Diff unavailable

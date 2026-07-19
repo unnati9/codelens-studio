@@ -40,6 +40,7 @@ const pullRequest = githubPullRequestSchema.parse({
   authorAvatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
   state: "OPEN",
   baseBranch: "main",
+  baseCommitSha: "fedcba9876543210fedcba9876543210fedcba98",
   headBranch: "feature/import",
   headCommitSha: "0123456789abcdef0123456789abcdef01234567",
   htmlUrl: "https://github.com/octocat/Hello-World/pull/42",
