@@ -92,6 +92,15 @@ const linkedBoard: Board = {
   github_changed_file_count: 1,
   github_last_synced_at: "2026-07-19T08:00:00.000Z",
   last_imported_at: "2026-07-19T08:00:00.000Z",
+  preview_provider: "VERCEL",
+  preview_base_url: "https://example.com/",
+  preview_url: "https://preview.example.com/",
+  preview_deployment_id: "dpl_old",
+  preview_deployment_status: "READY",
+  preview_commit_sha: oldHead,
+  preview_branch: "feature/review",
+  preview_last_checked_at: "2026-07-19T08:00:00.000Z",
+  preview_failure_reason: null,
   created_by: "guest-1",
   created_at: "2026-07-19T08:00:00.000Z",
   updated_at: "2026-07-19T08:00:00.000Z",
@@ -159,10 +168,11 @@ function mockSupabase(input: {
   savedBoard?: Board;
   savedStaleNode?: BoardNodeRecord;
 }) {
-  const boardSelect = createChain({ data: input.board ?? linkedBoard, error: null });
+  const sourceBoard = input.board ?? linkedBoard;
+  const boardSelect = createChain({ data: sourceBoard, error: null });
   const nodesSelect = createChain({ data: input.nodes ?? [], error: null });
   const savedBoard = input.savedBoard ?? {
-    ...(input.board ?? linkedBoard),
+    ...sourceBoard,
     source_type: "GITHUB_PR" as const,
     github_owner: repository.owner,
     github_repository: repository.name,
@@ -178,6 +188,18 @@ function mockSupabase(input: {
     github_changed_file_count: pullRequest.changedFileCount,
     github_last_synced_at: "2026-07-19T09:00:00.000Z",
     updated_at: "2026-07-19T09:00:00.000Z",
+    ...(sourceBoard.github_head_sha && sourceBoard.github_head_sha !== newHead
+      ? {
+          preview_url: null,
+          preview_deployment_id: null,
+          preview_deployment_status: "NOT_FOUND" as const,
+          preview_commit_sha: newHead,
+          preview_branch: pullRequest.headBranch,
+          preview_last_checked_at: null,
+          preview_failure_reason:
+            "The pull-request head changed. Refresh preview deployment discovery.",
+        }
+      : {}),
   };
   const boardUpdate = createChain({ data: savedBoard, error: null });
   const staleNodeUpdate = createChain({
@@ -245,8 +267,14 @@ describe("syncConnectedGitHubBoard", () => {
         github_base_sha: baseSha,
         github_head_sha: newHead,
         github_changed_file_count: 1,
+        preview_url: null,
+        preview_deployment_id: null,
+        preview_deployment_status: "NOT_FOUND",
+        preview_commit_sha: newHead,
       }),
     );
+    expect(result.board.preview_url).toBeNull();
+    expect(result.board.preview_commit_sha).toBe(newHead);
   });
 
   it("links a manual board without automatically importing files", async () => {
@@ -267,6 +295,15 @@ describe("syncConnectedGitHubBoard", () => {
       github_changed_file_count: null,
       github_last_synced_at: null,
       last_imported_at: null,
+      preview_provider: null,
+      preview_base_url: null,
+      preview_url: null,
+      preview_deployment_id: null,
+      preview_deployment_status: null,
+      preview_commit_sha: null,
+      preview_branch: null,
+      preview_last_checked_at: null,
+      preview_failure_reason: null,
     };
     mockSupabase({ board: manualBoard, nodes: [] });
 

@@ -160,6 +160,16 @@ export async function syncConnectedGitHubBoard(input: {
         502,
       );
     }
+    const wasSamePullRequest =
+      board.source_type === "GITHUB_PR" &&
+      board.github_owner?.toLowerCase() === owner.toLowerCase() &&
+      board.github_repository?.toLowerCase() === repositoryName.toLowerCase() &&
+      board.github_pull_request_number === pullRequest.pullNumber;
+    const headChanged = Boolean(
+      wasSamePullRequest &&
+      board.github_head_sha &&
+      board.github_head_sha.toLowerCase() !== pullRequest.headCommitSha.toLowerCase(),
+    );
     const { data: savedBoardRow, error: saveBoardError } = await supabase
       .from("boards")
       .update({
@@ -177,6 +187,18 @@ export async function syncConnectedGitHubBoard(input: {
         github_pull_request_description: pullRequest.description,
         github_changed_file_count: pullRequest.changedFileCount,
         github_last_synced_at: now,
+        ...(headChanged
+          ? {
+              preview_url: null,
+              preview_deployment_id: null,
+              preview_deployment_status: "NOT_FOUND",
+              preview_commit_sha: pullRequest.headCommitSha,
+              preview_branch: pullRequest.headBranch,
+              preview_last_checked_at: null,
+              preview_failure_reason:
+                "The pull-request head changed. Refresh preview deployment discovery.",
+            }
+          : {}),
       })
       .eq("id", input.boardId)
       .select()
@@ -188,17 +210,6 @@ export async function syncConnectedGitHubBoard(input: {
         502,
       );
     }
-
-    const wasSamePullRequest =
-      board.source_type === "GITHUB_PR" &&
-      board.github_owner?.toLowerCase() === owner.toLowerCase() &&
-      board.github_repository?.toLowerCase() === repositoryName.toLowerCase() &&
-      board.github_pull_request_number === pullRequest.pullNumber;
-    const headChanged = Boolean(
-      wasSamePullRequest &&
-      board.github_head_sha &&
-      board.github_head_sha.toLowerCase() !== pullRequest.headCommitSha.toLowerCase(),
-    );
 
     return githubBoardSyncResponseSchema.parse({
       board: boardSchema.parse(savedBoardRow),

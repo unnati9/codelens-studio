@@ -22,6 +22,10 @@ import {
   type GitHubImportResult,
 } from "@/components/github/github-pr-import-dialog";
 import { GitHubRepositoryDrawer } from "@/components/github/github-repository-drawer";
+import {
+  PreviewDeploymentPanel,
+  previewDeploymentStatusLabel,
+} from "@/components/preview-deployments/preview-deployment-panel";
 import { ReviewPanel } from "@/components/review/review-panel";
 import { ReviewStatusActions } from "@/components/review/review-status-actions";
 import { Brand } from "@/components/ui/brand";
@@ -36,6 +40,7 @@ import {
 } from "@/lib/data/annotations";
 import { getBoard, updateBoardGitHubSource, updateBoardStatus } from "@/lib/data/boards";
 import { syncGitHubBoard } from "@/lib/data/github";
+import { refreshBoardPreviewDeployment } from "@/lib/data/preview-deployments";
 import { uploadBoardImage } from "@/lib/data/media";
 import {
   createBoardNode,
@@ -57,6 +62,10 @@ import type { GitHubConnectedPullRequestRequest } from "@/lib/github/connected-s
 import type { GitHubBoardSyncResponse } from "@/lib/github/board-sync-schema";
 import type { GitHubChangedFile, GitHubPullRequest } from "@/lib/github/schema";
 import { serializeBoardNode, type BoardFlowNode } from "@/lib/nodes/serialization";
+import {
+  previewDeploymentPollDelay,
+  shouldPollPreviewDeployment,
+} from "@/lib/preview-deployments/polling";
 import { AnnotationSaveCoordinator } from "@/lib/persistence/annotation-save-coordinator";
 import { BoardSaveCoordinator } from "@/lib/persistence/board-save-coordinator";
 import { CombinedSaveState } from "@/lib/persistence/combined-save-state";
@@ -188,6 +197,9 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
   const [githubImportOpen, setGitHubImportOpen] = useState(false);
   const [githubDrawerOpen, setGitHubDrawerOpen] = useState(false);
+  const [previewDeploymentPanelOpen, setPreviewDeploymentPanelOpen] = useState(false);
+  const previewPollingAttempt = useRef(0);
+  const [previewPollingError, setPreviewPollingError] = useState<string | null>(null);
   const localNodeInteractions = useRef(new Set<string>());
   const nodes = useBoardStore((state) => state.nodes);
   const annotations = useAnnotationStore((state) => state.annotations);
@@ -278,6 +290,34 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (
+      !board ||
+      previewPollingError ||
+      !shouldPollPreviewDeployment(board.preview_deployment_status)
+    ) {
+      if (!board || !shouldPollPreviewDeployment(board.preview_deployment_status)) {
+        previewPollingAttempt.current = 0;
+      }
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshBoardPreviewDeployment(board.id)
+        .then((result) => {
+          previewPollingAttempt.current += 1;
+          setBoard(result.board);
+        })
+        .catch((caughtError) => {
+          setPreviewPollingError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : "Preview deployment polling failed.",
+          );
+        });
+    }, previewDeploymentPollDelay(previewPollingAttempt.current));
+    return () => window.clearTimeout(timer);
+  }, [board, previewPollingError]);
 
   const reconcileWorkspace = useCallback(async () => {
     await Promise.all([saveCoordinator.flush(), annotationSaveCoordinator.flush()]);
@@ -966,6 +1006,24 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             {board.source_type === "GITHUB_PR" && (
               <button
                 type="button"
+                data-testid="open-preview-deployment"
+                onClick={() => setPreviewDeploymentPanelOpen(true)}
+                className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#ff5a36]"
+                title={
+                  previewPollingError ??
+                  board.preview_failure_reason ??
+                  "Configure preview deployment discovery"
+                }
+              >
+                Preview ·{" "}
+                {previewPollingError
+                  ? "Refresh failed"
+                  : previewDeploymentStatusLabel(board.preview_deployment_status)}
+              </button>
+            )}
+            {board.source_type === "GITHUB_PR" && (
+              <button
+                type="button"
                 data-testid="open-github-pr"
                 onClick={() => setGitHubDrawerOpen(true)}
                 className="rounded-lg border border-[#dcd8cf] bg-white px-3 py-2 text-xs font-bold text-[#4d5663] hover:border-[#ff5a36]"
@@ -1143,6 +1201,17 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             initialUrl={board.github_pull_request_url}
             onClose={() => setGitHubImportOpen(false)}
             onImport={handleGitHubImport}
+          />
+        )}
+        {previewDeploymentPanelOpen && (
+          <PreviewDeploymentPanel
+            board={board}
+            createdBy={identity.id}
+            onClose={() => setPreviewDeploymentPanelOpen(false)}
+            onBoardChange={(nextBoard) => {
+              setPreviewPollingError(null);
+              setBoard(nextBoard);
+            }}
           />
         )}
       </main>
