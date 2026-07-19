@@ -21,8 +21,9 @@ async function expectSaved(page: Page) {
 }
 
 async function waitForDebouncedNodeSave(page: Page, action: () => Promise<void>) {
-  const responsePromise = page.waitForResponse((response) =>
-    isSupabaseTableWrite(response, "board_nodes", "PATCH"),
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/board-nodes/update") && response.request().method() === "POST",
   );
 
   await action();
@@ -150,8 +151,10 @@ test("Day 1 board content and layout survive a production refresh", async ({ pag
       (response) =>
         response.url().includes("/storage/v1/object/") && response.request().method() === "POST",
     );
-    const nodeResponse = page.waitForResponse((response) =>
-      isSupabaseTableWrite(response, "board_nodes", "PATCH"),
+    const nodeResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/board-nodes/update") &&
+        response.request().method() === "POST",
     );
     await page.getByTestId("image-file-input").setInputFiles(reviewScreenshot);
 
@@ -213,22 +216,20 @@ test("Day 1 board content and layout survive a production refresh", async ({ pag
   });
 
   await test.step("surface a failed save and recover", async () => {
-    await page.route("**/rest/v1/board_nodes*", async (route) => {
-      if (route.request().method() === "PATCH") {
-        await route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ message: "Intentional acceptance-test failure" }),
-        });
-        return;
-      }
-      await route.continue();
+    await page.route("**/api/board-nodes/update", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { message: "Intentional acceptance-test failure" },
+        }),
+      });
     });
 
     await page.getByTestId("code-editor").fill(`${sampleCode}\n// failure probe`);
     await expect(page.getByTestId("save-state")).toHaveAttribute("data-save-state", "failed");
     await expect(page.getByTestId("save-error")).toBeVisible();
-    await page.unroute("**/rest/v1/board_nodes*");
+    await page.unroute("**/api/board-nodes/update");
 
     await waitForDebouncedNodeSave(page, async () => {
       await page.getByTestId("code-editor").fill(`${sampleCode}\n// recovered`);

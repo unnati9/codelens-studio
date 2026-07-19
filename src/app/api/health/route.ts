@@ -1,24 +1,20 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { getSupabasePublicKey } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publicKey = getSupabasePublicKey();
   const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "board-media";
 
-  if (!url || !publicKey) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
       { ok: false, database: false, storage: false, message: "Supabase is not configured." },
       { status: 503 },
     );
   }
 
-  const supabase = createClient(url, publicKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = getSupabaseServerClient();
   const [databaseResult, storageResult] = await Promise.all([
     supabase.from("boards").select("id", { head: true, count: "exact" }),
     supabase.storage.from(bucket).list("", { limit: 1 }),
