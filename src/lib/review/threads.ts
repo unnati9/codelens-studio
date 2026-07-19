@@ -31,6 +31,7 @@ export function createCommentThreadDraft(input: {
 }
 
 export function createCommentDraft(input: {
+  boardId: string;
   threadId: string;
   authorId: string;
   authorName: string;
@@ -41,6 +42,7 @@ export function createCommentDraft(input: {
   const now = input.now ?? new Date().toISOString();
   return reviewCommentSchema.parse({
     id: input.id ?? crypto.randomUUID(),
+    boardId: input.boardId,
     threadId: input.threadId,
     authorId: input.authorId,
     authorName: input.authorName,

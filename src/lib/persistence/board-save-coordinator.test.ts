@@ -67,4 +67,41 @@ describe("BoardSaveCoordinator", () => {
       error: "Database unavailable",
     });
   });
+
+  it("flushes the final interaction immediately and reconciles the returned record", async () => {
+    vi.useFakeTimers();
+    const persisted = vi.fn(async (value: BoardNodeRecord) => ({
+      ...value,
+      updated_at: "2026-07-19T09:01:00.000Z",
+    }));
+    const onPersisted = vi.fn();
+    const coordinator = new BoardSaveCoordinator(persisted, vi.fn(), 10_000, onPersisted);
+
+    coordinator.queue({ ...record, position_x: 640 });
+    await coordinator.flush(record.id);
+
+    expect(persisted).toHaveBeenCalledTimes(1);
+    expect(onPersisted).toHaveBeenCalledWith(
+      expect.objectContaining({ position_x: 640, updated_at: "2026-07-19T09:01:00.000Z" }),
+    );
+  });
+
+  it("retries a failed offline save before reconnect reconciliation", async () => {
+    let attempts = 0;
+    const persisted = vi.fn(async (value: BoardNodeRecord) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("Offline");
+      return { ...value, updated_at: "2026-07-19T09:02:00.000Z" };
+    });
+    const coordinator = new BoardSaveCoordinator(persisted, vi.fn(), 0);
+
+    coordinator.queue({ ...record, width: 720 });
+    await coordinator.flush(record.id);
+    expect(coordinator.hasPending(record.id)).toBe(true);
+    await coordinator.retryFailed();
+
+    expect(persisted).toHaveBeenCalledTimes(2);
+    expect(coordinator.hasPending()).toBe(false);
+    expect(coordinator.getSnapshot().state).toBe("saved");
+  });
 });

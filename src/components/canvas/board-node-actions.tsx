@@ -5,6 +5,7 @@ import type { ResizeParams } from "@xyflow/react";
 import type { BoardNodeContent } from "@/lib/validation/board";
 
 export type BoardNodeActions = {
+  beginNodeInteraction: (nodeId: string) => void;
   updateNode: (
     nodeId: string,
     updates: { title?: string | null; content?: BoardNodeContent },

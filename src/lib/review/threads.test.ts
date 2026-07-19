@@ -39,6 +39,7 @@ describe("review thread model", () => {
   it("groups comments by thread and sorts messages chronologically", () => {
     const early = createCommentDraft({
       id: "6a17bb87-f39c-45d5-aa58-e2d8e6e68714",
+      boardId,
       threadId: firstThreadId,
       authorId: "guest-1",
       authorName: "Brisk Reviewer",
@@ -47,6 +48,7 @@ describe("review thread model", () => {
     });
     const late = createCommentDraft({
       id: "b36a1472-c523-4e23-88cd-033452afc2fb",
+      boardId,
       threadId: firstThreadId,
       authorId: "guest-2",
       authorName: "Calm Builder",

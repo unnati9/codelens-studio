@@ -6,9 +6,11 @@
 2. Open the SQL Editor and run
    every file in `supabase/migrations` in filename order.
 3. Confirm that `boards` and `board_nodes` appear in the Table Editor.
-4. Confirm that the public `board-media` bucket appears in Storage with an 8 MB limit and PNG,
+4. Confirm that `boards`, `board_nodes`, `annotations`, `comment_threads`, and `comments` are enabled
+   in the `supabase_realtime` publication. The realtime migration performs this automatically.
+5. Confirm that the public `board-media` bucket appears in Storage with an 8 MB limit and PNG,
    JPEG, and WebP MIME restrictions.
-5. Copy the project URL and anon key from Project Settings > API.
+6. Copy the project URL and anon key from Project Settings > API.
 
 Do not copy or expose the service-role key. The application does not use it.
 
@@ -32,6 +34,9 @@ Do not copy or expose the service-role key. The application does not use it.
 The application uses standard Next.js output and has no filesystem persistence, background worker,
 microservice, or platform-specific runtime dependency. It can run on any host supporting Next.js 16
 and Node.js 20.9 or newer. If configured, `GITHUB_TOKEN` must remain server-only.
+
+Realtime collaboration needs no additional environment variable. It uses the existing public
+Supabase URL and publishable/anon key under the same prototype Row Level Security policies.
 
 ## Day 1 acceptance gate
 
@@ -66,7 +71,7 @@ reloads, checks persisted content and geometry, verifies direct board navigation
 save to check the visible error state, and confirms deletion survives a reload. It does not use a
 service-role key or delete pre-existing user data.
 
-## Known Day 1 limitations
+## Known prototype limitations
 
 - Guest IDs identify a browser installation; they are not authentication or authorization.
 - Boards are link-accessible and writable under the prototype RLS policy.
@@ -75,4 +80,8 @@ service-role key or delete pre-existing user data.
   the test never requires privileged cleanup credentials.
 - Pending debounced changes should reach **Saved** before refreshing; browser unload cannot guarantee
   completion of an in-flight network request.
-- Realtime updates and conflict handling begin on Day 2.
+- Postgres DELETE events cannot be server-filtered by Supabase Realtime. The client listens for
+  delete primary keys and only removes IDs already present in the active board stores; reconnect
+  reconciliation provides a second consistency check.
+- Collaboration uses row-level last-write-wins timestamps, not character-level merging. Concurrent
+  edits to the same record resolve to the latest committed database row.
