@@ -17,6 +17,7 @@ export const commentThreadSchema = z.object({
 
 export const reviewCommentSchema = z.object({
   id: z.string().uuid(),
+  boardId: z.string().uuid(),
   threadId: z.string().uuid(),
   authorId: z.string().min(1),
   authorName: z.string().trim().min(1).max(120),
@@ -44,6 +45,7 @@ export const commentThreadDatabaseRowSchema = z.object({
 
 export const reviewCommentDatabaseRowSchema = z.object({
   id: z.string().uuid(),
+  board_id: z.string().uuid(),
   thread_id: z.string().uuid(),
   author_id: z.string().min(1),
   author_name: z.string().trim().min(1).max(120),
@@ -93,6 +95,7 @@ export function reviewCommentFromDatabaseRow(input: unknown): ReviewComment {
   const row = reviewCommentDatabaseRowSchema.parse(input);
   return reviewCommentSchema.parse({
     id: row.id,
+    boardId: row.board_id,
     threadId: row.thread_id,
     authorId: row.author_id,
     authorName: row.author_name,
@@ -106,6 +109,7 @@ export function reviewCommentToDatabaseRow(input: ReviewComment): ReviewCommentD
   const comment = reviewCommentSchema.parse(input);
   return reviewCommentDatabaseRowSchema.parse({
     id: comment.id,
+    board_id: comment.boardId,
     thread_id: comment.threadId,
     author_id: comment.authorId,
     author_name: comment.authorName,

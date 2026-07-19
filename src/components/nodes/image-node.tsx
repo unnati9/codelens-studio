@@ -11,7 +11,7 @@ export function ImageNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const { updateNode, commitResize, uploadImage } = useBoardNodeActions();
+  const { beginNodeInteraction, updateNode, commitResize, uploadImage } = useBoardNodeActions();
   const record = data.record;
   const content = record.content;
 
@@ -54,6 +54,7 @@ export function ImageNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
         minWidth={280}
         minHeight={220}
         handleClassName="node-resize-handle"
+        onResizeStart={() => beginNodeInteraction(id)}
         onResizeEnd={(_event, params) => commitResize(id, params)}
       />
 

@@ -11,6 +11,7 @@ type SaveStateListener = (state: SaveState, error?: string | null) => void;
 
 export class BoardSaveCoordinator {
   private readonly revisions = new Map<string, number>();
+  private readonly failedSaves = new Map<string, PendingNodeSave>();
   private immediateSaveCount = 0;
   private state: SaveState = "idle";
   private error: string | null = null;
@@ -20,17 +21,20 @@ export class BoardSaveCoordinator {
     persist: (record: BoardNodeRecord) => Promise<BoardNodeRecord>,
     private readonly onStateChange: SaveStateListener,
     delayMs = 550,
+    private readonly onPersisted?: (record: BoardNodeRecord) => void,
   ) {
     this.debouncer = createKeyedDebouncer(async ({ record, revision }: PendingNodeSave) => {
       try {
-        await persist(record);
+        const saved = await persist(record);
         if (this.revisions.get(record.id) === revision) {
+          this.onPersisted?.(saved);
           this.revisions.delete(record.id);
+          this.failedSaves.delete(record.id);
           this.markSavedIfIdle();
         }
       } catch (caughtError) {
         if (this.revisions.get(record.id) === revision) {
-          this.revisions.delete(record.id);
+          this.failedSaves.set(record.id, { record, revision });
           this.setState(
             "failed",
             caughtError instanceof Error ? caughtError.message : "Could not save node.",
@@ -43,6 +47,7 @@ export class BoardSaveCoordinator {
   queue(record: BoardNodeRecord) {
     const revision = (this.revisions.get(record.id) ?? 0) + 1;
     this.revisions.set(record.id, revision);
+    this.failedSaves.delete(record.id);
     this.setState("saving");
     this.debouncer.schedule(record.id, { record, revision });
   }
@@ -64,6 +69,29 @@ export class BoardSaveCoordinator {
 
   async flush(nodeId?: string) {
     await this.debouncer.flush(nodeId);
+  }
+
+  async retryFailed() {
+    const failed = [...this.failedSaves.values()];
+    if (failed.length === 0) return;
+    this.setState("saving");
+    for (const pending of failed) {
+      if (this.revisions.get(pending.record.id) === pending.revision) {
+        this.debouncer.schedule(pending.record.id, pending);
+      }
+    }
+    await this.debouncer.flush();
+  }
+
+  hasPending(nodeId?: string) {
+    return nodeId ? this.revisions.has(nodeId) : this.revisions.size > 0;
+  }
+
+  discard(nodeId: string) {
+    this.debouncer.cancel(nodeId);
+    this.revisions.delete(nodeId);
+    this.failedSaves.delete(nodeId);
+    this.markSavedIfIdle();
   }
 
   getSnapshot() {

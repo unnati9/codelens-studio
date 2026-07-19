@@ -3,10 +3,10 @@
 CodeLens Studio is a desktop-first spatial workspace for comparing source code with the UI it
 produces. This repository implements durable boards, editable code nodes, uploaded image nodes,
 movable and resizable React Flow layouts, a tracing-paper annotation layer, linked review comments,
-and read-only public GitHub pull-request import backed by Supabase.
+read-only public GitHub pull-request import, and board-scoped realtime collaboration backed by
+Supabase.
 
-Realtime subscriptions, presence, video, private GitHub access, and AI features are intentionally
-not included in this milestone.
+Video, private GitHub access, and AI features are intentionally not included in this milestone.
 
 ## Stack and dependency purpose
 
@@ -16,7 +16,8 @@ not included in this milestone.
 - React Flow provides canvas pan, zoom, node movement, and resizing.
 - A custom SVG overlay provides freehand, rectangle, arrow, and highlight annotations without an
   additional drawing dependency.
-- Supabase Postgres and Storage provide durable board state and uploaded images.
+- Supabase Postgres, Realtime, Presence, and Storage provide durable board state, live updates,
+  connected-reviewer presence, and uploaded images.
 - Zod validates every database record at the data boundary.
 - Zustand separates the persisted board mirror from transient selection and save-state UI.
 - Vitest covers serialization, validation, and debounced persistence.
@@ -34,8 +35,9 @@ Requirements: Node.js 20.9 or newer, npm, and a Supabase project.
    Supabase CLI.
 5. Start the app with `npm run dev` and open `http://localhost:3000`.
 
-The migrations create the `boards`, `board_nodes`, and `annotations` tables, their update triggers
-and indexes, the public `board-media` storage bucket, and prototype Row Level Security policies.
+The migrations create the board, node, annotation, comment-thread, and comment records, their
+update triggers and indexes, the public `board-media` storage bucket, prototype Row Level Security
+policies, and the Realtime publication entries used by collaboration.
 
 ## Annotation coordinate model
 
@@ -65,6 +67,22 @@ For a controlled test, open a small public PR that you own, ensure it includes o
 change and optionally one binary or lock-file change, then import it. Confirm source files are selected
 by default, non-source files are not, imported diffs are read-only, and importing the same SHA and
 filename again reports a skipped duplicate.
+
+## Realtime collaboration
+
+Every open board subscribes to validated Postgres changes for that board. Node, annotation, review,
+comment, and board-status events update the local stores without calling persistence again. Database
+`updated_at` values provide last-write-wins ordering; stale events are ignored and identical local
+echoes are suppressed. Node movement and resize remain debounced during interaction, then flush
+immediately on pointer-up.
+
+Presence uses a unique ID per open browser tab and publishes the guest name plus current node and
+annotation selection. Presence is ephemeral; it is never stored in the database. Pan, zoom,
+selection, open panels, annotation-tool settings, and draft comment text remain local to each tab.
+
+On reconnect, failed node and annotation saves are retried before the active board is refetched and
+reconciled. The top bar distinguishes connecting, connected, reconnecting, offline, and failed
+states and never labels disconnected work as fully synchronized.
 
 ## Commands
 

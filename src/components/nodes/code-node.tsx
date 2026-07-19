@@ -24,7 +24,7 @@ function diffLineClass(line: string) {
 }
 
 export function CodeNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
-  const { updateNode, commitResize } = useBoardNodeActions();
+  const { beginNodeInteraction, updateNode, commitResize } = useBoardNodeActions();
   const record = data.record;
   const content = record.content;
   const lineNumbers = useMemo(
@@ -52,6 +52,7 @@ export function CodeNode({ id, data, selected }: NodeProps<BoardFlowNode>) {
         minWidth={300}
         minHeight={240}
         handleClassName="node-resize-handle"
+        onResizeStart={() => beginNodeInteraction(id)}
         onResizeEnd={(_event, params) => commitResize(id, params)}
       />
 

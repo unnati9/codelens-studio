@@ -46,6 +46,13 @@ export function createKeyedDebouncer<T>(
       );
     },
 
+    cancel(key: string) {
+      const timer = timers.get(key);
+      if (timer) clearTimeout(timer);
+      timers.delete(key);
+      pendingValues.delete(key);
+    },
+
     cancelAll() {
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();

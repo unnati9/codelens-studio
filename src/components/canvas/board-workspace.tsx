@@ -9,13 +9,14 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnnotationLayer, type NewAnnotationInput } from "./annotation-layer";
 import { AnnotationToolbar } from "./annotation-toolbar";
 import { BoardNodeActionsContext, type BoardNodeActions } from "./board-node-actions";
 import { CreationToolbar } from "./creation-toolbar";
 import { PropertiesPanel } from "./properties-panel";
 import { SaveIndicator } from "./save-indicator";
+import { RealtimeIndicator } from "./realtime-indicator";
 import {
   GitHubPrImportDialog,
   type GitHubImportResult,
@@ -48,12 +49,16 @@ import {
   updateCommentThreadStatus,
 } from "@/lib/data/review";
 import { useGuestIdentity } from "@/lib/guest/use-guest-identity";
+import { useBrowserSessionId } from "@/lib/guest/use-browser-session-id";
 import { buildImportedCodeNodeRecords } from "@/lib/github/import";
 import type { GitHubChangedFile, GitHubPullRequest } from "@/lib/github/schema";
 import { serializeBoardNode, type BoardFlowNode } from "@/lib/nodes/serialization";
 import { AnnotationSaveCoordinator } from "@/lib/persistence/annotation-save-coordinator";
 import { BoardSaveCoordinator } from "@/lib/persistence/board-save-coordinator";
 import { CombinedSaveState } from "@/lib/persistence/combined-save-state";
+import type { BoardRealtimeChange } from "@/lib/realtime/events";
+import { useBoardRealtime } from "@/lib/realtime/use-board-realtime";
+import { shouldApplyVersionedRecord } from "@/lib/realtime/versioning";
 import {
   createCommentDraft,
   createCommentThreadDraft,
@@ -171,12 +176,14 @@ function offsetForDuplicate(annotation: Annotation): AnnotationGeometry {
 
 export function BoardWorkspace({ boardId }: { boardId: string }) {
   const { identity } = useGuestIdentity();
+  const sessionId = useBrowserSessionId();
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [reviewStatusUpdating, setReviewStatusUpdating] = useState(false);
   const [githubImportOpen, setGitHubImportOpen] = useState(false);
+  const localNodeInteractions = useRef(new Set<string>());
   const nodes = useBoardStore((state) => state.nodes);
   const annotations = useAnnotationStore((state) => state.annotations);
   const threads = useReviewStore((state) => state.threads);
@@ -191,16 +198,26 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   );
   const saveCoordinator = useMemo(
     () =>
-      new BoardSaveCoordinator(updateBoardNode, (state, error) => {
-        combinedSaveState.update("nodes", state, error);
-      }),
+      new BoardSaveCoordinator(
+        updateBoardNode,
+        (state, error) => {
+          combinedSaveState.update("nodes", state, error);
+        },
+        550,
+        (record) => useBoardStore.getState().upsertRemoteRecord(record),
+      ),
     [combinedSaveState],
   );
   const annotationSaveCoordinator = useMemo(
     () =>
-      new AnnotationSaveCoordinator(updateAnnotation, (state, error) => {
-        combinedSaveState.update("annotations", state, error);
-      }),
+      new AnnotationSaveCoordinator(
+        updateAnnotation,
+        (state, error) => {
+          combinedSaveState.update("annotations", state, error);
+        },
+        350,
+        (annotation) => useAnnotationStore.getState().upsertRemote(annotation),
+      ),
     [combinedSaveState],
   );
   const annotationMode = useCanvasUiStore((state) => state.annotationMode);
@@ -211,6 +228,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
   const annotationOverlayOpacity = useCanvasUiStore((state) => state.annotationOverlayOpacity);
   const annotationsVisible = useCanvasUiStore((state) => state.annotationsVisible);
   const selectedAnnotationId = useCanvasUiStore((state) => state.selectedAnnotationId);
+  const selectedNodeId = useCanvasUiStore((state) => state.selectedNodeId);
   const reviewPanelOpen = useCanvasUiStore((state) => state.reviewPanelOpen);
   const threadFilter = useCanvasUiStore((state) => state.threadFilter);
   const threadCounts = useMemo(() => getThreadCounts(threads), [threads]);
@@ -233,6 +251,129 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [annotationMode, nodes],
   );
   const serializedNodes = useMemo(() => nodes.map(serializeBoardNode), [nodes]);
+
+  const reconcileWorkspace = useCallback(async () => {
+    await Promise.all([saveCoordinator.flush(), annotationSaveCoordinator.flush()]);
+    await Promise.all([saveCoordinator.retryFailed(), annotationSaveCoordinator.retryFailed()]);
+    if (saveCoordinator.hasPending() || annotationSaveCoordinator.hasPending()) {
+      throw new Error("Local changes are still waiting to sync.");
+    }
+
+    const [loadedBoard, loadedNodes, loadedAnnotations, loadedThreads] = await Promise.all([
+      getBoard(boardId),
+      listBoardNodes(boardId),
+      listAnnotations(boardId),
+      listReviewThreads(boardId),
+    ]);
+    const selectedId = useCanvasUiStore.getState().selectedNodeId;
+    setBoard(loadedBoard);
+    useBoardStore.getState().initialize(boardId, loadedNodes);
+    useBoardStore.getState().setNodes(
+      useBoardStore.getState().nodes.map((node) => ({
+        ...node,
+        selected: node.id === selectedId,
+      })),
+    );
+    useAnnotationStore.getState().initialize(boardId, loadedAnnotations);
+    useReviewStore.getState().initialize(boardId, loadedThreads);
+    combinedSaveState.markAllSaved();
+  }, [annotationSaveCoordinator, boardId, combinedSaveState, saveCoordinator]);
+
+  const handleRealtimeChange = useCallback(
+    (change: BoardRealtimeChange) => {
+      if (change.action === "DELETE") {
+        if (change.entity === "board") {
+          if (change.id === boardId) setLoadError("This board was deleted in another session.");
+          return;
+        }
+        if (change.entity === "node") {
+          const node = useBoardStore
+            .getState()
+            .nodes.find((candidate) => candidate.id === change.id);
+          if (!node) return;
+          const removedAnnotationIds = useAnnotationStore
+            .getState()
+            .annotations.filter((annotation) => annotation.targetNodeId === change.id)
+            .map((annotation) => annotation.id);
+          saveCoordinator.discard(change.id);
+          for (const annotationId of removedAnnotationIds) {
+            annotationSaveCoordinator.discard(annotationId);
+          }
+          useBoardStore.getState().deleteRemoteRecord(change.id);
+          useAnnotationStore.getState().removeForNode(change.id);
+          useReviewStore.getState().removeForAnnotations(removedAnnotationIds);
+          if (useCanvasUiStore.getState().selectedNodeId === change.id) {
+            useCanvasUiStore.getState().selectNode(null);
+          }
+          return;
+        }
+        if (change.entity === "annotation") {
+          if (!useAnnotationStore.getState().get(change.id)) return;
+          annotationSaveCoordinator.discard(change.id);
+          useAnnotationStore.getState().deleteRemote(change.id);
+          useReviewStore.getState().removeForAnnotation(change.id);
+          if (useCanvasUiStore.getState().selectedAnnotationId === change.id) {
+            useCanvasUiStore.getState().selectAnnotation(null);
+          }
+          return;
+        }
+        if (change.entity === "thread") {
+          if (!useReviewStore.getState().threads.some((thread) => thread.id === change.id)) return;
+          useReviewStore.getState().deleteRemoteThread(change.id);
+          return;
+        }
+        const review = useReviewStore.getState();
+        if (
+          review.pendingComments.some((comment) => comment.id === change.id) ||
+          review.threads.some((thread) =>
+            thread.comments.some((comment) => comment.id === change.id),
+          )
+        ) {
+          review.deleteRemoteComment(change.id);
+        }
+        return;
+      }
+
+      switch (change.entity) {
+        case "board":
+          setBoard((current) =>
+            shouldApplyVersionedRecord(current, change.record) ? change.record : current,
+          );
+          break;
+        case "node":
+          if (
+            localNodeInteractions.current.has(change.record.id) ||
+            saveCoordinator.hasPending(change.record.id)
+          ) {
+            return;
+          }
+          useBoardStore.getState().upsertRemoteRecord(change.record);
+          break;
+        case "annotation":
+          if (annotationSaveCoordinator.hasPending(change.record.id)) return;
+          useAnnotationStore.getState().upsertRemote(change.record);
+          break;
+        case "thread":
+          useReviewStore.getState().upsertRemoteThread(change.record);
+          break;
+        case "comment":
+          useReviewStore.getState().upsertRemoteComment(change.record);
+          break;
+      }
+    },
+    [annotationSaveCoordinator, boardId, saveCoordinator],
+  );
+
+  useBoardRealtime({
+    enabled: Boolean(board && !loading && !loadError),
+    boardId,
+    identity,
+    sessionId,
+    selectedNodeId,
+    selectedAnnotationId,
+    onChange: handleRealtimeChange,
+    onReconnect: reconcileWorkspace,
+  });
 
   const queueNodeSave = useCallback(
     (nodeId: string) => {
@@ -301,6 +442,10 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [queueNodeSave],
   );
 
+  const beginNodeInteraction = useCallback<BoardNodeActions["beginNodeInteraction"]>((nodeId) => {
+    localNodeInteractions.current.add(nodeId);
+  }, []);
+
   const commitResize = useCallback<BoardNodeActions["commitResize"]>(
     (nodeId, { x, y, width, height }) => {
       const currentNodes = useBoardStore.getState().nodes;
@@ -328,8 +473,11 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         ),
       );
       queueNodeSave(nodeId);
+      void saveCoordinator
+        .flush(nodeId)
+        .finally(() => localNodeInteractions.current.delete(nodeId));
     },
-    [queueNodeSave],
+    [queueNodeSave, saveCoordinator],
   );
 
   const uploadImage = useCallback<BoardNodeActions["uploadImage"]>(
@@ -350,6 +498,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         }
         saveCoordinator.finishImmediate();
       } catch (caughtError) {
+        saveCoordinator.discard(nodeId);
         useBoardStore.getState().updateRecord(nodeId, { content: original.content });
         const message =
           caughtError instanceof Error ? caughtError.message : "Could not upload image.";
@@ -395,6 +544,10 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
           .annotations.filter((annotation) => annotation.targetNodeId === nodeId)
           .map((annotation) => annotation.id);
         await deleteBoardNode(boardId, nodeId);
+        saveCoordinator.discard(nodeId);
+        for (const annotationId of removedAnnotationIds) {
+          annotationSaveCoordinator.discard(annotationId);
+        }
         useBoardStore.getState().removeNode(nodeId);
         useAnnotationStore.getState().removeForNode(nodeId);
         useReviewStore.getState().removeForAnnotations(removedAnnotationIds);
@@ -406,7 +559,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         saveCoordinator.failImmediate(message);
       }
     },
-    [boardId, saveCoordinator],
+    [annotationSaveCoordinator, boardId, saveCoordinator],
   );
 
   const persistNewAnnotation = useCallback(
@@ -466,6 +619,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
       saveCoordinator.beginImmediate();
       try {
         await deleteAnnotation(boardId, annotationId);
+        annotationSaveCoordinator.discard(annotationId);
         useReviewStore.getState().removeForAnnotation(annotationId);
         saveCoordinator.finishImmediate();
       } catch (caughtError) {
@@ -519,6 +673,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         guestId: identity.id,
       });
       const commentDraft = createCommentDraft({
+        boardId,
         threadId: threadDraft.id,
         authorId: identity.id,
         authorName: identity.displayName,
@@ -550,6 +705,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     async (threadId: string, body: string) => {
       if (!identity) return;
       const comment = createCommentDraft({
+        boardId,
         threadId,
         authorId: identity.id,
         authorName: identity.displayName,
@@ -567,7 +723,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
         throw caughtError;
       }
     },
-    [identity, saveCoordinator],
+    [boardId, identity, saveCoordinator],
   );
 
   const handleThreadStatusChange = useCallback(
@@ -678,7 +834,12 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
     [boardId, identity, saveCoordinator],
   );
 
-  const actions: BoardNodeActions = { updateNode, commitResize, uploadImage };
+  const actions: BoardNodeActions = {
+    beginNodeInteraction,
+    updateNode,
+    commitResize,
+    uploadImage,
+  };
 
   if (!configured) {
     return (
@@ -763,6 +924,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
             <span className="hidden text-xs font-medium text-[#74777d] xl:block">
               {identity.displayName}
             </span>
+            <RealtimeIndicator sessionId={sessionId} />
             <SaveIndicator />
             <Link
               href="/boards"
@@ -803,6 +965,7 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
               onNodesChange={applyChanges}
               onNodeClick={annotationMode ? undefined : handleNodeClick}
               onPaneClick={() => useCanvasUiStore.getState().selectNode(null)}
+              onNodeDragStart={(_event, node) => localNodeInteractions.current.add(node.id)}
               onNodeDragStop={(_event, node) => {
                 const currentNodes = useBoardStore.getState().nodes;
                 setNodes(
@@ -823,6 +986,9 @@ export function BoardWorkspace({ boardId }: { boardId: string }) {
                   ),
                 );
                 queueNodeSave(node.id);
+                void saveCoordinator
+                  .flush(node.id)
+                  .finally(() => localNodeInteractions.current.delete(node.id));
               }}
               fitView
               fitViewOptions={{ padding: 0.18, maxZoom: 1 }}

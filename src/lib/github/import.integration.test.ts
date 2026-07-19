@@ -104,6 +104,7 @@ describe("GitHub import integration with existing review models", () => {
     });
     const comment = createCommentDraft({
       id: "6a17bb87-f39c-45d5-aa58-e2d8e6e68714",
+      boardId,
       threadId: thread.id,
       authorId: "guest-1",
       authorName: "Brisk Reviewer",
